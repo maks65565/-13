@@ -23,6 +23,7 @@
     ФИНАЛЬНЫЙ БОС: ПКМ — выстрел в такт (кольцо = цель), Q — перезарядка, ПРОБЕЛ — парирование атаки
     F8 / F9 / F10   — ЧИТЫ: F8 — следующий этаж, F9 — все ключи + заряд + телепорт к двери, F10 — сразу финал
     TAB             — архив прочитанных записок
+    ВНИЗ НА -10     — на этаже -3 лифт срывается и падает в шахту: найди динамит и взорви завал (секретная концовка)
     ПРОБЕЛ x10      — когда монстр схватил: 10 нажатий за 3 секунды, чтобы вырваться (иначе — скример)
     P или ESC       — пауза
 
@@ -44,7 +45,8 @@
                   Atmosphere (опасность, мерцание, шаги, пыль), Cheats, FinalCutscene (таймлайн финала),
                   BossFight (правила финального боя: тайминг выстрела, перезарядка, парирование),
                   RadioSystem (сюжетные реплики по событиям), AchievementTracker (достижения),
-                  StruggleFight (схватка: QTE), PrologueSystem (вступительная кат-сцена)
+                  StruggleFight (схватка: QTE), PrologueSystem (вступительная кат-сцена),
+                  CinematicSystem (падение лифта, подрыв завала), CinematicRenderer (их рисование)
     Ресурсы       Textures (процедурные картинки), SoundBank (синтез звуков)
     Отрисовка     TextRenderer, Camera, WorldPainter, LightingRenderer, SpriteRenderer, PostFX, Hud, Minimap,
                   ScreenRenderer (меню/пауза/поимка/итоги), PlayView (порядок слоёв кадра),
@@ -91,10 +93,12 @@ DIFFS = [
     {"name": "КОШМАР", "mspeed": 1.15, "drain": 0.75, "bats": 5, "hear": 1.25, "hunt": 0.45},
 ]
 
-FLOORS = [   # три этажа: поднимаешься с -3 на -1, на каждом свои условия
-    {"name": "ЭТАЖ -3", "title": "ЛАБОРАТОРНЫЙ КОРПУС", "keys": 2, "mspeed": 0.90, "broken": 0.35, "bats_d": 1},
-    {"name": "ЭТАЖ -2", "title": "ОПЫТНЫЙ СЕКТОР", "keys": 3, "mspeed": 1.00, "broken": 0.50, "bats_d": 0},
-    {"name": "ЭТАЖ -1", "title": "ШЛЮЗ ГЛУБИНЫ", "keys": 3, "mspeed": 1.12, "broken": 0.65, "bats_d": -1},
+FLOORS = [   # маршрут: -3 -> (лифт падает) -> -10 -> -2 -> -1 -> финал; на -10 можно уйти в секретную концовку
+    {"name": "ЭТАЖ -3", "title": "ЛАБОРАТОРНЫЙ КОРПУС", "keys": 2, "mspeed": 0.90, "broken": 0.35, "bats_d": 1, "next": 3},
+    {"name": "ЭТАЖ -2", "title": "ОПЫТНЫЙ СЕКТОР", "keys": 3, "mspeed": 1.00, "broken": 0.50, "bats_d": 0, "next": 2},
+    {"name": "ЭТАЖ -1", "title": "ШЛЮЗ ГЛУБИНЫ", "keys": 3, "mspeed": 1.12, "broken": 0.65, "bats_d": -1, "next": None, "final": True},
+    {"name": "ЭТАЖ -10", "title": "ЗАБРОШЕННАЯ ШАХТА", "keys": 2, "mspeed": 1.05, "broken": 0.85, "bats_d": 0, "next": 1,
+     "secret": True, "notes": 0},
 ]
 
 RAY_COS = [math.cos(2 * math.pi * i / RAYS) for i in range(RAYS)]
@@ -625,6 +629,43 @@ def screen_glitch(scr, k, allow_negative=True):
         inv.fill((255, 255, 255))
         inv.blit(scr, (0, 0), special_flags=pygame.BLEND_RGB_SUB)
         scr.blit(inv, (0, 0))
+
+
+_rr = random.Random(4)
+RUBBLE = [(_rr.uniform(-1, 1), _rr.uniform(-1, 1), _rr.uniform(0.35, 0.8), _rr.randint(62, 120), _rr.uniform(0, 6.283)) for _ in range(16)]
+
+
+def draw_rubble(scr, cx, cy, sc=1.0):
+    """Завал: груда серых камней с тёмной каймой и бликами."""
+    for (ox, oy, r, g, a) in RUBBLE:
+        x, y, rr = cx + ox * 34 * sc, cy + oy * 28 * sc, r * 30 * sc
+        pts = [(x + math.cos(a + i * 1.25) * rr * (0.7 + 0.3 * ((i * 3) % 2)), y + math.sin(a + i * 1.25) * rr * (0.7 + 0.3 * ((i * 3) % 2)))
+               for i in range(5)]
+        pygame.draw.polygon(scr, (22, 22, 24), pts)
+        pygame.draw.polygon(scr, (g, g - 4, g - 8), [(x + (px - x) * 0.82, y + (py - y) * 0.82) for px, py in pts])
+        pygame.draw.line(scr, (g + 40, g + 36, g + 30), pts[0], pts[1], 2)
+
+
+def draw_dynamite(scr, x, y, sc=1.0, t=0.0, lit=False):
+    """Пучок динамита: три красные шашки, чёрная стяжка, фитиль (искра мигает; lit — горит)."""
+    for ox in (-8, 0, 8):
+        pygame.draw.rect(scr, (60, 8, 8), (int(x + (ox - 5) * sc), int(y - 14 * sc), int(10 * sc), int(28 * sc)))
+        pygame.draw.rect(scr, (200, 34, 34), (int(x + (ox - 4) * sc), int(y - 13 * sc), int(8 * sc), int(26 * sc)))
+        pygame.draw.line(scr, (240, 120, 110), (int(x + (ox - 2) * sc), int(y - 12 * sc)), (int(x + (ox - 2) * sc), int(y + 10 * sc)), 1)
+    pygame.draw.rect(scr, (18, 18, 20), (int(x - 14 * sc), int(y - 3 * sc), int(28 * sc), int(6 * sc)))
+    fx, fy = x + 6 * sc, y - 16 * sc
+    pygame.draw.lines(scr, (110, 96, 70), False, [(fx, fy), (fx + 8 * sc, fy - 8 * sc), (fx + 4 * sc, fy - 16 * sc)], max(1, int(2 * sc)))
+    if lit or int(t * 3) % 2 == 0:
+        pygame.draw.circle(scr, (255, 220, 90), (int(fx + 4 * sc), int(fy - 16 * sc)), max(2, int(4 * sc)))
+
+
+def make_tiled_room(tex):
+    """Пол комнаты из тех же процедурных тайлов (для кат-сцен)."""
+    room = pygame.Surface((SW + TILE, SH + TILE))
+    for ty in range(0, SH + TILE, TILE):
+        for tx_ in range(0, SW + TILE, TILE):
+            room.blit(random.choice(tex.floor_tiles), (tx_, ty))
+    return room
 
 
 def make_maw_texture():
@@ -1162,6 +1203,9 @@ class StoryBook:
         ("Шлюз глубины — последний рубеж перед поверхностью.",
          "Над шлюзом арсенал. Но сначала придётся пройти мимо того, кто знает твоё имя.",
          "Чем выше ты поднимаешься, тем яснее: он не охотится на тебя. Он ждёт тебя."),
+        ("Заброшенная шахта: сюда не должны были попасть живые.",
+         "Трос оборвался, и лифт рухнул на самое дно. Здесь остался динамит рабочих — для обвалов.",
+         "Два пути: найти ключи и подняться на лифте — или взорвать завал и выйти прямо на поверхность."),
     ]
     TOTAL_NOTES = 18
     NOTES = {
@@ -1244,6 +1288,9 @@ class StoryBook:
         "note_2_3": [("ЛЕНА", "Он писал это тебе: «Скажи Лене, что я не боялся». Не оставляй его там, Марк.")],
         "note_2_4": [("ЛЕНА", "Они вывезли сыворотку наверх... Значит, Кесслер уже на поверхности. И он знает про тебя.")],
         "note_2_5": [("ЛЕНА", "Ты слышишь его через рацию — поэтому в эфире этот шёпот. Он зовёт нас обоих.")],
+        "floor_start_3": [("ЛЕНА", "Марк?! Связь рвётся... Лифт упал на -10? Там старые шахты. Ищи динамит — рабочие оставляли его для обвалов.")],
+        "dynamite_found": [("ЛЕНА", "Динамит! Занеси его к завалу в конце шахты — взрыв пробьёт путь наверх. Или найди ключи и поднимайся на лифте.")],
+        "blast_hint": [("ЛЕНА", "Это завал — тупик старой шахты. Подорвёшь его — выйдешь прямо на поверхность. Но взрыв услышит всё живое...")],
         "boss_start": [("ЛЕНА", "Он выбрался! Стреляй, когда круг совпадёт! Q — перезарядка, ПРОБЕЛ — отбей удар!")],
         "choice": [("ЛЕНА", "Томми...? Это ты? Томми, пожалуйста... Марк, я слышу — он говорит!")],
     }
@@ -1256,6 +1303,11 @@ class StoryBook:
         "kill": "[2]  ДОБИТЬ — выстрелить",
     }
     ENDINGS = {
+        "blast": ("ВЗРЫВНОЙ ПОБЕГ", (255, 170, 70),
+                  ["Ты зажёг фитиль и укрылся за ящиками. Грохот прокатился по шахте — и сверху хлынул настоящий дневной свет.",
+                   "Ты выбрался на поверхность в обход лифтов, этажей и монстра. Рация шипела от помех.",
+                   "Наверху уже выла сирена: взрыв услышали за километры. Лена нашла тебя первой и записала каждое твоё слово.",
+                   "Кесслер не успел улететь. Правда о «ГЛУБИНЕ» всплыла вместе с тобой. Томас так и остался там, внизу, один."]),
         "normal": ("ВЫ СБЕЖАЛИ", (80, 220, 120),
                    ["Плита рухнула, и чудовище больше не встало.",
                     "Ты поднялся на поверхность. Рация молчит.",
@@ -1278,7 +1330,7 @@ class StoryBook:
 class Level:
     """Готовый уровень: сетка и расстановка предметов (только данные)."""
 
-    def __init__(self, grid, floors, exit_cell, keys, bats, botts, lockers, lamps, monster_cell, notes):
+    def __init__(self, grid, floors, exit_cell, keys, bats, botts, lockers, lamps, monster_cell, notes, dynamite, blast_cell):
         self.grid = grid
         self.floors = floors
         self.exit_cell = exit_cell
@@ -1289,6 +1341,8 @@ class Level:
         self.lamps = lamps
         self.monster_cell = monster_cell
         self.notes = notes
+        self.dynamite = dynamite
+        self.blast_cell = blast_cell
 
 
 class LevelBuilder:
@@ -1354,7 +1408,7 @@ class LevelBuilder:
         nt = [c for c in floors if dist[c[1]][c[0]] >= 6 and c not in taken and c not in set(bats)]
         random.shuffle(nt)
         notes, sep, tries = [], 8, 0
-        while len(notes) < 6 and tries < 1800 and nt:          # шесть записок с историей на каждом этаже
+        while len(notes) < self.plan.get("notes", 6) and tries < 1800 and nt:          # шесть записок с историей на каждом этаже
             tries += 1
             c = random.choice(nt)
             others = [(int(o["x"] // TILE), int(o["y"] // TILE)) for o in notes] + list(keys)
@@ -1388,8 +1442,16 @@ class LevelBuilder:
                 lamps.append({"x": (c[0] + 0.5) * TILE, "y": (c[1] + 0.5) * TILE,
                               "ph": random.uniform(0, 6.28), "broken": random.random() < self.plan["broken"], "idx": 2})
 
+        dyn, blast_cell = [], None
+        if self.plan.get("secret"):                       # секретный этаж: динамит и завал в разных дальних углах
+            far = [c for c in dead if c != exit_cell and dist[c[1]][c[0]] >= 10 and c not in set(keys)]
+            pool = far or [c for c in floors if dist[c[1]][c[0]] >= 12 and c != exit_cell]
+            blast_cell = random.choice(pool or floors)
+            dc = [c for c in floors if dist[c[1]][c[0]] >= 14 and c not in taken and c != blast_cell
+                  and far_enough(c, [blast_cell, exit_cell], 10)] or [random.choice(floors)]
+            dyn = [self.item(random.choice(dc))]
         return Level(grid, floors, exit_cell, [self.item(c) for c in keys], [self.item(c) for c in bats],
-                     botts, lockers, lamps, monster_cell, notes)
+                     botts, lockers, lamps, monster_cell, notes, dyn, blast_cell)
 
 
 class Session:
@@ -1406,6 +1468,8 @@ class Session:
         self.exit_cell = (1, 1)
         self.keys, self.bats, self.botts, self.lockers, self.lamps = [], [], [], [], []
         self.notes = []
+        self.dynamite = []
+        self.blast_cell = None
         self.floor = 0
         self.player = None
         self.monster = None
@@ -1430,6 +1494,8 @@ class Session:
         self.low_warned = False
         self.exit_open = 0.0
         self.grace = 0.0                  # секунды неуязвимости после побега из хватки
+        self.has_dynamite = False
+        self.blast_warn = 0.0
         self.notes_read = set()          # (этаж, номер) прочитанных записок — переносится между этажами
         self.radio_seen = set()          # какие радиосцены уже прозвучали
         self.ending = "normal"          # normal | kill | spare
@@ -1467,6 +1533,7 @@ class Session:
         self.dc = dc
         self.grid, self.floors, self.exit_cell = level.grid, level.floors, level.exit_cell
         self.keys, self.bats, self.botts, self.notes = level.keys, level.bats, level.botts, level.notes
+        self.dynamite, self.blast_cell = level.dynamite, level.blast_cell
         self.lockers, self.lamps = level.lockers, level.lamps
         self.reset_flags()
         self.events = []
@@ -1977,6 +2044,24 @@ class PickupSystem:
                 s.notes_read.add((s.floor, it["idx"]))
                 s.emit("note", (s.floor, it["idx"]))
 
+        for it in s.dynamite:                              # секретный этаж: динамит и завал
+            if it["alive"] and math.hypot(it["x"] - p.x, it["y"] - p.y) < 26:
+                it["alive"] = False
+                s.has_dynamite = True
+                self.audio.play("pickup")
+                self.note.say("ДИНАМИТ! Занеси его к завалу — взрыв пробьёт путь на поверхность", 4.0)
+                s.emit("dynamite")
+        s.blast_warn = max(0.0, s.blast_warn - dt)
+        if s.blast_cell is not None:
+            bx, by = (s.blast_cell[0] + 0.5) * TILE, (s.blast_cell[1] + 0.5) * TILE
+            if math.hypot(bx - p.x, by - p.y) < 36:
+                if s.has_dynamite:
+                    s.emit("secret_blast")
+                elif s.blast_warn <= 0:
+                    self.note.say("Завал. Нужна взрывчатка — динамит где-то на этом этаже", 3.0)
+                    s.blast_warn = 3.0
+                    s.emit("blast_seen")
+
         # --- дверь лифта: плавно открывается, когда собраны все ключи
         was_open = s.exit_open
         s.exit_open = clamp(s.exit_open + (dt * 1.2 if p.keys >= need else -dt * 2.0), 0.0, 1.0)
@@ -1987,11 +2072,12 @@ class PickupSystem:
         s.exit_warn = max(0.0, s.exit_warn - dt)
         if math.hypot(ex - p.x, ey - p.y) < 30:
             if p.keys >= need:
-                if s.floor < len(FLOORS) - 1:
-                    s.emit("floor_cleared")
-                else:
+                nxt = s.plan["next"]
+                if nxt is None:
                     s.finish_time = s.play_time
                     s.emit("exit_reached")
+                else:
+                    s.emit("floor_cleared", nxt)
             elif s.exit_warn <= 0:
                 self.note.say("Дверь заперта. Нужно ключей: %d (есть %d)" % (need, p.keys), 2.5)
                 s.exit_warn = 2.6
@@ -2087,6 +2173,9 @@ class Cheats:
         for it in self.s.keys:
             it["alive"] = False
         p.keys = self.s.keys_needed
+        for it in self.s.dynamite:
+            it["alive"] = False
+            self.s.has_dynamite = True
         p.battery, p.light_on = 100.0, True
         self.s.hidden, self.s.hid_L = False, None
         ex, ey = self.s.exit_cell
@@ -2100,8 +2189,8 @@ class Cheats:
         """F8: перейти на следующий этаж (на последнем — сразу к выходу)."""
         s = self.s
         s.cheated = True
-        if s.floor < len(FLOORS) - 1:
-            s.emit("floor_cleared")
+        if s.plan["next"] is not None:
+            s.emit("floor_cleared", s.plan["next"])
         else:
             s.finish_time = s.play_time
             s.emit("exit_reached")
@@ -2563,6 +2652,35 @@ class SpriteRenderer:
             pygame.draw.circle(self.screen, (120, 200, 140), (int(x), int(y - h)), 4)
             pygame.draw.circle(self.screen, (220, 255, 230), (int(x - 1), int(y - h - 1)), 1)
 
+    def draw_secret(self, camx, camy):
+        """Секретный этаж: динамит на полу и завал в тупике (туда нужно донести динамит)."""
+        s, scr, t = self.s, self.screen, self.clock.t
+        for it in s.dynamite:
+            if it["alive"]:
+                sx, sy = it["x"] - camx, it["y"] - camy + math.sin(t * 3 + it["ph"]) * 2
+                if -40 < sx < SW + 40 and -40 < sy < SH + 40:
+                    draw_dynamite(scr, sx, sy, 1.0, t)
+        if s.blast_cell is not None:
+            bx, by = (s.blast_cell[0] + 0.5) * TILE - camx, (s.blast_cell[1] + 0.5) * TILE - camy
+            if -80 < bx < SW + 80 and -80 < by < SH + 80:
+                draw_rubble(scr, bx, by, 0.62)
+                if s.has_dynamite:                                   # пульсирующий оранжевый маркер
+                    pygame.draw.circle(scr, (255, 150, 40), (int(bx), int(by)), int(22 + 5 * math.sin(t * 6)), 2)
+
+    def draw_blast_arrow(self, camx, camy):
+        """Когда динамит у тебя, вокруг игрока — оранжевая стрелка к завалу."""
+        p, s = self.s.player, self.s
+        if not s.has_dynamite or s.blast_cell is None or s.hidden:
+            return
+        bx, by = (s.blast_cell[0] + 0.5) * TILE, (s.blast_cell[1] + 0.5) * TILE
+        a = math.atan2(by - p.y, bx - p.x)
+        r = 82 + 4 * math.sin(self.clock.t * 6)
+        cx, cy = p.x - camx + math.cos(a) * r, p.y - camy + math.sin(a) * r
+        pts = [(cx + math.cos(a) * 10, cy + math.sin(a) * 10), (cx + math.cos(a + 2.5) * 8, cy + math.sin(a + 2.5) * 8),
+               (cx + math.cos(a - 2.5) * 8, cy + math.sin(a - 2.5) * 8)]
+        pygame.draw.polygon(self.screen, (255, 150, 40), pts)
+        pygame.draw.polygon(self.screen, (60, 24, 4), pts, 1)
+
     def draw_exit_arrow(self, camx, camy):
         """Когда все 3 ключа собраны, вокруг игрока появляется стрелка к выходу."""
         p = self.s.player
@@ -2606,7 +2724,8 @@ class SpriteRenderer:
         for it, glow, lim in [(i, self.tex.glow_key, 520) for i in self.s.keys if i["alive"]] + \
                              [(i, self.tex.glow_bat, 330) for i in self.s.bats if i["alive"]] + \
                              [(i, self.tex.glow_bat, 240) for i in self.s.botts if i["alive"]] + \
-                             [(i, self.tex.glow_note, 300) for i in self.s.notes if i["alive"]]:
+                             [(i, self.tex.glow_note, 300) for i in self.s.notes if i["alive"]] + \
+                             [(i, self.tex.glow_exit_r, 340) for i in self.s.dynamite if i["alive"]]:
             d = math.hypot(it["x"] - p.x, it["y"] - p.y)
             if d < lim and line_clear(self.s.grid, p.x, p.y, it["x"], it["y"]):
                 k = 0.6 + 0.4 * math.sin(self.clock.t * 4 + it["ph"])
@@ -2705,6 +2824,8 @@ class Hud:
         self.text.draw_text(self.text.f_small, "БУТЫЛКИ %d  [Q]" % self.s.bottles, (190, 190, 180), (16, 104), False)
         self.text.draw_text(self.text.f_small, "ЗАПИСКИ %d/%d  [TAB]" % (len(self.s.notes_read), StoryBook.TOTAL_NOTES),
                             (190, 190, 180), (16, 122), False)
+        if self.s.has_dynamite:
+            self.text.draw_text(self.text.f_small, "ДИНАМИТ: ЕСТЬ", (255, 170, 80), (16, 140), False)
         # этаж и время
         self.text.draw_text(self.text.f_small, FLOORS[self.s.floor]["name"], (170, 150, 120), (SW // 2, 34))
         tt = int(self.s.play_time)
@@ -2884,7 +3005,7 @@ class ScreenRenderer:
             self.text.draw_text(self.text.f_small, "(пройдено с читом — рекорд не засчитан)", (170, 150, 110), (SW // 2, 592))
         elif self.scores.new_record:
             self.text.draw_text(self.text.f_small, "НОВЫЙ РЕКОРД! (%s)" % DIFFS[self.cfg.diff]["name"], (240, 220, 120), (SW // 2, 592))
-        elif not self.s.all_notes_read:
+        elif self.s.ending == "normal" and not self.s.all_notes_read:
             self.text.draw_text(self.text.f_small, "Прочти все %d записок — и в финале появится выбор" % StoryBook.TOTAL_NOTES, (200, 170, 110), (SW // 2, 592))
         if int(self.clock.t * 1.6) % 2 == 0:
             self.text.draw_text(self.text.f_mid, "ENTER — сыграть снова", (210, 235, 215), (SW // 2, 634))
@@ -3532,6 +3653,7 @@ class PlayView:
         self.sprites.draw_exit(camx, camy)
         self.sprites.draw_pickups(camx, camy)
         self.sprites.draw_notes(camx, camy)
+        self.sprites.draw_secret(camx, camy)
         self.sprites.draw_props(camx, camy)
         self.sprites.draw_thrown(camx, camy)
         self.sprites.draw_dust(camx, camy)
@@ -3551,6 +3673,7 @@ class PlayView:
         if self.s.hidden:                         # в шкафчике видно только через щель
             scr.blit(self.slit, (int(p.x - camx) - SW, int(p.y - camy) + 8 - SH))
         self.sprites.draw_exit_arrow(camx, camy)
+        self.sprites.draw_blast_arrow(camx, camy)
         self.fx.apply()
         self.hud.draw()
 
@@ -4514,6 +4637,9 @@ class MusicDirector:
         elif state == "struggle":
             t["mus_chase"] = 0.8
             t["mus_tension"] = 0.6
+        elif state == "cinematic":
+            t["mus_finale"] = 0.55
+            t["mus_tension"] = 0.45
         elif state == "floor":
             t["mus_menu"] = 0.25
         elif state in ("play", "pause", "reading"):
@@ -4590,6 +4716,10 @@ class RadioSystem:
                 self.say_key("notes_half")
             if s.all_notes_read:
                 self.say_key("all_notes")
+        elif ev == "dynamite":
+            self.say_key("dynamite_found")
+        elif ev == "blast_seen":
+            self.say_key("blast_hint")
         elif ev == "hide":
             self.say_key("first_hide")
         elif ev == "throw":
@@ -4662,6 +4792,7 @@ class AchievementTracker:
         "sniper": ("МЕТКИЙ ГЛАЗ", "Сделай 3 идеальных выстрела подряд"),
         "mercy": ("МИЛОСЕРДИЕ", "Пощади Томаса в финале"),
         "slip": ("УСКОЛЬЗНУЛ", "Вырвись из хватки монстра за 3 секунды"),
+        "blaster": ("ПОДРЫВНИК", "Выберись на поверхность, взорвав завал на этаже -10"),
     }
 
     def __init__(self, audio, s):
@@ -4705,6 +4836,8 @@ class AchievementTracker:
                 self.unlock("sniper")
         elif ev == "struggle_won":
             self.unlock("slip")
+        elif ev == "blast_done":
+            self.unlock("blaster")
         elif ev == "boss_won" and self.s.ending == "spare":
             self.unlock("mercy")
 
@@ -4946,11 +5079,7 @@ class PrologueRenderer:
         """Лабораторный пол из тех же процедурных тайлов (строится один раз)."""
         if self.room is not None:
             return
-        room = pygame.Surface((SW + TILE, SH + TILE))
-        for ty in range(0, SH + TILE, TILE):
-            for tx_ in range(0, SW + TILE, TILE):
-                room.blit(random.choice(self.tex.floor_tiles), (tx_, ty))
-        self.room = room
+        self.room = make_tiled_room(self.tex)
 
     # ---- общие кирпичики
     def dim(self, alpha):
@@ -5156,6 +5285,213 @@ class PrologueRenderer:
             scr.blit(self.veil, (0, 0))
 
 
+# ------------------------------------------------------------------ КИНО: ПАДЕНИЕ ЛИФТА И ПОДРЫВ
+class CinematicSystem:
+    """Короткие кат-сцены без управления (ответственность: таймлайн, звуки по времени, сигнал о завершении)."""
+
+    SCENES = {
+        "fall": {"total": 8.3, "done": "fall_done",
+                 "cues": [(0.1, "alarm", 1, 0.5), (0.9, "bang", 0, 0.9), (1.25, "crunch", 0, 0.8), (1.5, "rumble", 0, 1.0),
+                          (4.0, "rumble", 0, 1.0), (6.3, "crash", 0, 1.0), (6.35, "sub", 0, 1.0)]},
+        "blast": {"total": 8.2, "done": "blast_done",
+                  "cues": [(0.4, "clunk", 0, 0.9), (1.0, "static", 0, 0.6), (1.4, "static", 0, 0.6), (1.8, "static", 0, 0.6),
+                           (2.2, "static", 0, 0.6), (2.6, "static", 0, 0.7), (3.0, "static", 0, 0.8), (3.4, "static", 0, 0.8),
+                           (4.2, "crash", 0, 1.0), (4.2, "sub", 0, 1.0), (4.25, "shriek", 0, 0.35), (4.5, "rumble", 0, 1.0),
+                           (6.4, "ding", 0, 0.6)]},
+    }
+
+    def __init__(self, audio, s):
+        self.audio = audio
+        self.s = s
+        self.name = "fall"
+        self.cues = []
+        self.t = 0.0
+        self.ci = 0
+        self.done = False
+
+    @property
+    def total(self):
+        return self.SCENES[self.name]["total"]
+
+    def begin(self, name):
+        self.name = name
+        self.t = 0.0
+        self.ci = 0
+        self.done = False
+        self.cues = sorted(self.SCENES[name]["cues"])
+
+    def skip(self):
+        if self.t > 1.0:
+            self.t = self.total
+
+    def update(self, dt):
+        if self.done:
+            return
+        self.t += dt
+        while self.ci < len(self.cues) and self.t >= self.cues[self.ci][0]:
+            _, name, loops, vol = self.cues[self.ci]
+            self.audio.play(name, loops, vol)
+            self.ci += 1
+        if self.t >= self.total:
+            self.done = True
+            self.audio.stop("alarm")
+            self.s.emit(self.SCENES[self.name]["done"])
+
+
+class CinematicRenderer:
+    """Рисование кино (ответственность: кабина падающего лифта; подрыв завала с ослепительным светом поверхности)."""
+
+    SUBS = {
+        "fall": [(0.3, 2.3, "Лифт дрожит. Что-то не так..."), (1.25, 3.6, "ТРОС ОБОРВАЛСЯ!"), (3.8, 6.2, "Всё быстрее... всё ниже..."),
+                 (6.9, 8.2, "ЭТАЖ -10")],
+        "blast": [(0.3, 2.2, "Динамит. Фитиль... Надеюсь, хватит."), (2.4, 4.1, "Прячься!"),
+                  (4.3, 6.2, "ВЗРЫВ! Свет... это поверхность?")],
+    }
+
+    def __init__(self, cin, clock, screen, tex, text):
+        self.cin = cin
+        self.clock = clock
+        self.screen = screen
+        self.tex = tex
+        self.text = text
+        self.room = None
+        self.cabin = None
+        self.veil = pygame.Surface((SW, SH))
+        self.beam = pygame.Surface((SW, SH), pygame.SRCALPHA)
+        pygame.draw.polygon(self.beam, (255, 250, 220, 110), [(SW // 2 - 90, 0), (SW // 2 + 90, 0), (SW // 2 + 420, SH), (SW // 2 - 420, SH)])
+
+    def prepare(self):
+        if self.room is None:
+            self.room = make_tiled_room(self.tex)
+            cab = pygame.Surface((380, 360))
+            for ty in range(0, 360, TILE):
+                for tx_ in range(0, 380, TILE):
+                    cab.blit(self.tex.wall_tiles[(tx_ // TILE + ty // TILE) % len(self.tex.wall_tiles)], (tx_, ty))
+            cab.fill((150, 150, 156), special_flags=pygame.BLEND_RGB_MULT)
+            pygame.draw.rect(cab, (20, 22, 26), (0, 0, 380, 360), 8)
+            pygame.draw.line(cab, (14, 16, 18), (190, 70), (190, 360), 5)
+            for i in range(-360, 380, 40):
+                pygame.draw.line(cab, (150, 126, 30), (i, 360), (i + 36, 322), 8)
+            self.cabin = cab
+
+    def flash(self, rgb, a):
+        self.veil.fill(rgb)
+        self.veil.set_alpha(int(clamp(a, 0, 255)))
+        self.screen.blit(self.veil, (0, 0))
+
+    def draw_fall(self, u):
+        scr, tx, t = self.screen, self.text, self.clock.t
+        fall = clamp((u - 1.25) / 5.0, 0.0, 1.0)                 # 0..1: прогресс падения (трос рвётся на 1.25 с)
+        speed = 120 + 1500 * fall
+        scr.fill((6, 6, 8))
+        off = (t * speed) % 120                                   # балки шахты проносятся вверх
+        for i in range(-1, 8):
+            y = int(i * 120 + off)
+            pygame.draw.rect(scr, (30, 32, 36), (0, y, 250, 14))
+            pygame.draw.rect(scr, (30, 32, 36), (SW - 250, y, 250, 14))
+            pygame.draw.line(scr, (52, 56, 60), (250, y + 7), (250, y + 127), 3)
+            pygame.draw.line(scr, (52, 56, 60), (SW - 250, y + 7), (SW - 250, y + 127), 3)
+        for _ in range(int(6 + 40 * fall)):                       # полосы скорости
+            x, y = random.randint(0, SW), random.randint(0, SH)
+            pygame.draw.line(scr, (74, 78, 84), (x, y), (x, y + 40 + int(140 * fall)), 1)
+        amp = 2 + 12 * fall if u >= 1.0 else 1.5 * math.sin(u * 40)
+        sh = (random.uniform(-amp, amp), random.uniform(-amp, amp))
+        cx, cy = SW // 2 + sh[0], 150 + sh[1]
+        cable_top = int(cy)
+        if u < 1.25:                                              # трос цел и натянут
+            pygame.draw.line(scr, (96, 96, 102), (SW // 2, 0), (int(cx), cable_top), 8)
+        else:                                                     # оборван: лохмотья сверху, обрубок на крыше
+            pygame.draw.line(scr, (96, 96, 102), (SW // 2, 0), (SW // 2 + int(math.sin(t * 9) * 8), 120), 8)
+            pygame.draw.line(scr, (96, 96, 102), (int(cx), cable_top), (int(cx) + 12, cable_top - 30), 8)
+            if u < 2.3:
+                for _ in range(12):
+                    pygame.draw.circle(scr, (255, 220, 90), (int(cx) + random.randint(-26, 26), cable_top - random.randint(0, 40)), random.randint(1, 4))
+        scr.blit(self.cabin, (int(cx - 190), cable_top))
+        pygame.draw.rect(scr, (10, 10, 12), (int(cx - 62), cable_top + 14, 124, 52))               # табло этажа
+        n = 3 + int(fall * 7.99)
+        blink = u < 1.25 and int(t * 4) % 2 == 0
+        tx.draw_text(tx.f_big, "-%d" % n, (255, 50, 40) if not blink else (120, 20, 20), (int(cx), cable_top + 40), True, False)
+        pl = pygame.transform.rotozoom(self.tex.player_base, -90 + math.sin(t * 18) * 8 * fall, 1.7)
+        scr.blit(pl, pl.get_rect(center=(int(cx), cable_top + 220)))
+        if u > 1.0:                                                # мигающий свет, к концу — полная темнота
+            self.flash((0, 0, 0), random.choice((0, 0, 40, 90, 160)) if u < 6.0 else 235)
+        if u >= 6.3:                                               # УДАР
+            t2 = u - 6.3
+            if t2 < 0.4:
+                self.flash((255, 255, 255), 255 * (1 - t2 / 0.4))
+            else:
+                scr.fill((0, 0, 0))
+                if u > 6.8:
+                    tx.draw_text(tx.f_title, "ЭТАЖ -10", (200, 40, 30), (SW // 2, SH // 2), True, False)
+
+    def draw_blast(self, u):
+        scr, tx, t = self.screen, self.text, self.clock.t
+        C = (SW // 2, SH // 2 - 30)
+        t2 = u - 4.2                                               # время после взрыва (<0 — ещё не взорвалось)
+        amp = 30 * math.exp(-t2 * 2.0) if t2 >= 0 else 0.0
+        ox, oy = random.uniform(-amp, amp), random.uniform(-amp, amp)
+        scr.blit(self.room, (int(ox) - 10, int(oy) - 10))
+        self.flash((0, 0, 0), 130 if t2 < 0 else 40)
+        if t2 < 0:
+            draw_rubble(scr, C[0], C[1], 2.4)
+            if u > 0.5:                                            # динамит заложен, фитиль уходит вдаль
+                draw_dynamite(scr, C[0] + 14, C[1] + 70, 2.0, t, u > 1.0)
+            end = (200, SH - 160)
+            if u > 0.9:
+                fz = clamp((u - 1.0) / 3.2, 0.0, 1.0)
+                pygame.draw.line(scr, (60, 52, 38), (C[0] + 28, C[1] + 56), end, 3)                        # фитиль
+                sp = (C[0] + 28 + (end[0] - C[0] - 28) * (1 - fz), C[1] + 56 + (end[1] - C[1] - 56) * (1 - fz))
+                pygame.draw.circle(scr, (255, 200, 60), (int(sp[0]), int(sp[1])), 6)                       # искра бежит к динамиту
+                pygame.draw.circle(scr, (255, 245, 200), (int(sp[0]), int(sp[1])), 3)
+            k = clamp((u - 1.0) / 1.6, 0.0, 1.0)                                                           # герой убегает и прячется
+            px, py = C[0] - 70 + (150 - C[0] + 70) * k, C[1] + 110 + (SH - 150 - C[1] - 110) * k
+            hero = pygame.transform.rotozoom(self.tex.player_base, 150 if k < 1 else 200, 1.5)
+            scr.blit(hero, hero.get_rect(center=(int(px), int(py))))
+        else:
+            beam_k = clamp(t2 / 1.2, 0.0, 1.0)
+            self.beam.set_alpha(int(clamp(255 * beam_k, 0, 255)))
+            scr.blit(self.beam, (0, 0))                                                                    # свет поверхности
+            for i in range(3):                                                                             # ударные волны
+                r = int(60 + t2 * (700 - i * 140))
+                pygame.draw.circle(scr, (255, 220, 160), (C[0], C[1]), r, 6)
+            for i in range(26):                                                                            # обломки
+                a = i * 0.2415
+                k2 = (1 - math.exp(-3.0 * t2)) / 3.0
+                x, y = C[0] + math.cos(a) * (360 + (i % 5) * 70) * k2, C[1] + math.sin(a) * (300 + (i % 4) * 60) * k2
+                g = 70 + (i % 6) * 14
+                pygame.draw.polygon(scr, (g, g - 4, g - 8), [(x, y), (x + 22, y + 8), (x + 8, y + 26)])
+            for i in range(18):                                                                            # пыль поднимается
+                x = C[0] + math.sin(i * 2.1) * 260
+                y = C[1] + 160 - (t2 * 90 + i * 31) % 420
+                pygame.draw.circle(scr, (176, 170, 156), (int(x), int(y)), 14 + i % 16)
+            k = clamp(t2 / 0.35, 0.0, 1.0)
+            if k < 1.0:
+                self.flash((255, 255, 255), 255 * (1 - k))
+            if u > 6.2:                                            # уход в слепящий свет
+                self.flash((255, 252, 235), 255 * clamp((u - 6.2) / 2.0, 0.0, 1.0))
+
+    def draw(self):
+        c, scr = self.cin, self.screen
+        u = c.t
+        getattr(self, "draw_" + c.name)(u)
+        if c.name == "fall" and 1.0 < u < 6.3:
+            screen_glitch(scr, 0.25, False)
+        scr.blit(self.tex.overlay, (0, 0))
+        scr.blit(random.choice(self.tex.grain), (0, 0))
+        pygame.draw.rect(scr, (0, 0, 0), (0, 0, SW, 56))
+        pygame.draw.rect(scr, (0, 0, 0), (0, SH - 56, SW, 56))
+        for a, b, line in self.SUBS[c.name]:
+            if a <= u < b:
+                k = min(1.0, (u - a) / 0.25, (b - u) / 0.25)
+                v = int(235 * k)
+                self.text.draw_text(self.text.f_mid, line, (v, v, int(v * 0.92)), (SW // 2, SH - 28))
+        if u > 1.0:
+            self.text.draw_text(self.text.f_small, "ENTER — пропустить", (90, 90, 84), (SW - 110, 24))
+        fade = clamp((0.5 - u) / 0.5, 0.0, 1.0)
+        if fade > 0:
+            self.flash((0, 0, 0), 255 * fade)
+
+
 # ------------------------------------------------------------------ ВВОД
 class InputRouter:
     """Переводит события и опрос клавиатуры pygame в команды. Никакой игровой логики."""
@@ -5247,6 +5583,9 @@ class InputRouter:
         elif state == "prologue":
             if enter or k == pygame.K_ESCAPE:
                 return [("skip_prologue",)]
+        elif state == "cinematic":
+            if enter or k == pygame.K_ESCAPE:
+                return [("skip_cinematic",)]
         elif state == "struggle":                       # вырваться из хватки: только ПРОБЕЛ
             if k == pygame.K_SPACE:
                 return [("struggle_press",)]
@@ -5280,10 +5619,11 @@ class InputRouter:
 class Game:
     """
     Приложение: окно, главный цикл и конечный автомат состояний
-    (menu -> prologue -> floor -> play <-> pause -> struggle -> caught -> lose | cutscene -> boss -> win).
+    (menu -> prologue -> floor -> play <-> pause -> struggle -> caught -> lose | cinematic | cutscene -> boss -> win).
     Сам ничего не считает и не рисует: связывает компоненты и передаёт им управление.
     """
 
+    after_cin = None         # (этаж, вещи), куда перейти после кат-сцены падения
     from_archive = False     # записка открыта из архива (после закрытия вернёмся в архив)
     lose_boss = False        # поражение произошло в финальном бою (тогда ENTER повторяет бой)
 
@@ -5323,6 +5663,8 @@ class Game:
                                               sprites=self.sprites, struggle=self.struggle, tex=self.tex, text=self.text)
         self.prologue = PrologueSystem(audio=self.audio, s=self.s)
         self.prologue_view = PrologueRenderer(clock=self.clock, prologue=self.prologue, screen=self.screen, tex=self.tex, text=self.text)
+        self.cin = CinematicSystem(audio=self.audio, s=self.s)
+        self.cin_view = CinematicRenderer(cin=self.cin, clock=self.clock, screen=self.screen, tex=self.tex, text=self.text)
         self.fx = PostFX(atmo=self.atmo, cfg=self.cfg, clock=self.clock, s=self.s, screen=self.screen, tex=self.tex)
         self.hud = Hud(cfg=self.cfg, clock=self.clock, minimap=self.minimap, note=self.note, s=self.s, screen=self.screen, text=self.text)
         self.screens = ScreenRenderer(ach=self.ach, audio=self.audio, cfg=self.cfg, clock=self.clock, lighting=self.lighting, s=self.s, scores=self.scores, screen=self.screen, tex=self.tex, text=self.text)
@@ -5378,6 +5720,15 @@ class Game:
         self.playview.prepare()
         self.screens.start_fade(0.7)
         self.state = "play"
+        pygame.mouse.set_visible(False)
+
+    def begin_cinematic(self, name):
+        """Кат-сцена без управления: 'fall' (лифт падает на -10) или 'blast' (подрыв завала)."""
+        self.audio.stop("alarm")
+        self.cin.begin(name)
+        self.cin_view.prepare()
+        self.screens.start_fade(0.4)
+        self.state = "cinematic"
         pygame.mouse.set_visible(False)
 
     def begin_struggle(self):
@@ -5468,9 +5819,21 @@ class Game:
             self.ach.on_event(ev, data)
             if ev == "note":
                 self.begin_note(data)
-            elif ev == "floor_cleared":
+            elif ev == "floor_cleared":              # data — номер следующего этажа
                 self.audio.play("win")
-                self.begin_floor_card(self.s.floor + 1, self.s.carry())
+                if self.s.floor == 0 and data == 3:  # с -3 лифт не поднимается: трос рвётся, кабина падает на -10
+                    self.after_cin = (3, self.s.carry())
+                    self.begin_cinematic("fall")
+                else:
+                    self.begin_floor_card(data, self.s.carry())
+            elif ev == "fall_done":
+                self.begin_floor_card(*self.after_cin)
+            elif ev == "secret_blast":               # динамит у завала: подрыв
+                self.begin_cinematic("blast")
+            elif ev == "blast_done":                 # новая концовка: выход через шахту
+                self.s.ending = "blast"
+                self.s.finish_time = self.s.play_time
+                self.finish_finale()
             elif ev == "monster_alert":
                 self.audio.play("growl")
             elif ev == "monster_seen":
@@ -5518,6 +5881,8 @@ class Game:
             pygame.mouse.set_visible(False)
         elif name == "skip_prologue":
             self.prologue.skip()
+        elif name == "skip_cinematic":
+            self.cin.skip()
         elif name == "struggle_press":
             self.struggle.press()
         elif name == "start_game":
@@ -5639,6 +6004,11 @@ class Game:
             self.dispatch_events()
             if self.state == "prologue":
                 self.prologue_view.draw()
+        elif st == "cinematic":
+            self.cin.update(dt)
+            self.dispatch_events()
+            if self.state == "cinematic":
+                self.cin_view.draw()
         elif st == "struggle":
             self.struggle.update(dt)
             self.dispatch_events()
