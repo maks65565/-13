@@ -46,7 +46,8 @@
                   BossFight (правила финального боя: тайминг выстрела, перезарядка, парирование),
                   RadioSystem (сюжетные реплики по событиям), AchievementTracker (достижения),
                   StruggleFight (схватка: QTE), PrologueSystem (вступительная кат-сцена),
-                  CinematicSystem (падение лифта, подрыв завала), CinematicRenderer (их рисование)
+                  CinematicSystem (падение лифта, подрыв завала), CinematicRenderer (их рисование),
+                  PounceSystem / PounceRenderer (бросок монстра на камеру в момент поимки, как у Фокси)
     Ресурсы       Textures (процедурные картинки), SoundBank (синтез звуков)
     Отрисовка     TextRenderer, Camera, WorldPainter, LightingRenderer, SpriteRenderer, PostFX, Hud, Minimap,
                   ScreenRenderer (меню/пауза/поимка/итоги), PlayView (порядок слоёв кадра),
@@ -880,6 +881,10 @@ class SoundBank:
                                                          + 0.5 * random.uniform(-1, 1)) * math.exp(-t * 4.5) * 0.5
                                          + math.sin(tau * 50 * t) * math.exp(-t * 6), 0.7)
         self.sounds["static"] = self.make(0.3, lambda t: random.uniform(-1, 1) * math.exp(-t * 9), 0.5)
+        self.sounds["pounce"] = self.make(0.95, lambda t: (math.sin(tau * (700 + 2600 * t) * t) * 0.5
+                                                         + math.sin(tau * 90 * t) * math.sin(tau * (1500 + 900 * math.sin(tau * 30 * t)) * t) * 0.5
+                                                         + random.uniform(-1, 1) * 0.55)
+                                          * min(1.0, t * 25) * max(0.0, min(1.0, (0.95 - t) / 0.25)), 0.9)
         self.sounds["radio"] = self.make(0.5, lambda t: random.uniform(-1, 1) * 0.5 * math.exp(-t * 4)
                                          + (math.sin(tau * 1400 * t) * 0.4 if t < 0.07 else 0.0), 0.45)
         self.sounds["reload"] = self.make(0.45, lambda t: math.sin(tau * 2100 * t) * math.exp(-t * 70)
@@ -4637,6 +4642,9 @@ class MusicDirector:
         elif state == "struggle":
             t["mus_chase"] = 0.8
             t["mus_tension"] = 0.6
+        elif state == "pounce":
+            t["mus_chase"] = 0.9
+            t["mus_tension"] = 0.8
         elif state == "cinematic":
             t["mus_finale"] = 0.55
             t["mus_tension"] = 0.45
@@ -5492,6 +5500,105 @@ class CinematicRenderer:
             self.flash((0, 0, 0), 255 * fade)
 
 
+# ------------------------------------------------------------------ БРОСОК (КАК ФОКСИ)
+class PounceSystem:
+    """Бросок на камеру (ответственность: таймлайн «прыжка» в момент поимки; затем начинается схватка)."""
+
+    TOTAL = 0.85
+
+    def __init__(self, audio, s):
+        self.audio = audio
+        self.s = s
+        self.t = 0.0
+        self.done = False
+
+    def begin(self):
+        self.t = 0.0
+        self.done = False
+        self.audio.play("whoosh", vol=0.9)
+        self.audio.play("pounce", vol=1.0)
+
+    @property
+    def k(self):
+        return clamp(self.t / self.TOTAL, 0.0, 1.0)
+
+    def update(self, dt):
+        if self.done:
+            return
+        self.t += dt
+        if self.t >= self.TOTAL:
+            self.done = True
+            self.audio.play("static", vol=0.6)
+            self.s.emit("pounce_done")
+
+
+class PounceRenderer:
+    """
+    Рисование броска (ответственность: монстр срывается с места и ЛЕТИТ НА КАМЕРУ — ускоряясь, с судорожной тряской,
+    щёлкающей пастью, чёрными кадрами и статикой, как прыжок Фокси в FNaF 2).
+    """
+
+    def __init__(self, cfg, clock, pounce, scare, s, screen, sprites, tex):
+        self.cfg = cfg
+        self.clock = clock
+        self.pounce = pounce
+        self.scare = scare
+        self.s = s
+        self.screen = screen
+        self.sprites = sprites
+        self.tex = tex
+        self.tmp_p = pygame.Surface((90, 90), pygame.SRCALPHA)
+        self.snap = None
+        self.dark = pygame.Surface((SW, SH))
+        self.dark.fill((0, 0, 0))
+        self.flash = pygame.Surface((SW, SH))
+        self.ang = 0.0
+
+    def begin(self):
+        m, p = self.s.monster, self.s.player
+        self.ang = math.atan2(p.y - m.y, p.x - m.x)           # бросок идёт оттуда, откуда монстр подкрался
+        self.snap = self.screen.copy()
+
+    def draw(self):
+        pn, scr, sc_ = self.pounce, self.screen, self.scare
+        k = pn.k
+        e = k ** 2.4                                           # ускорение: сначала крадётся, потом РЫВОК
+        calm = 0.4 if self.cfg.gentle else 1.0
+        f = (math.cos(self.ang), math.sin(self.ang))
+        p = (-f[1], f[0])
+        P = (SW / 2, SH / 2)
+        amp = (4 + 70 * e) * calm                              # судорожная тряска нарастает вместе с броском
+        ox, oy = random.uniform(-amp, amp), random.uniform(-amp, amp)
+        scr.blit(self.snap, (int(ox * 0.4), int(oy * 0.4)))     # фон — последний кадр игры
+        self.dark.set_alpha(int(clamp(40 + 130 * e, 0, 255)))
+        scr.blit(self.dark, (0, 0))
+        pl = self.s.player                                      # герой застыл в панике
+        pl.angle, pl.moving, pl.sprinting, pl.light_on = self.ang + math.pi + math.sin(pn.t * 40) * 0.4, True, True, True
+        self.tmp_p.fill((0, 0, 0, 0))
+        self.sprites.draw_player(45, 45, self.tmp_p)
+        big = pygame.transform.rotozoom(self.tmp_p, 0.0, 2.4)
+        scr.blit(big, big.get_rect(center=(int(P[0] + ox), int(P[1] + oy))))
+        sc = 0.45 + 2.2 * e                                     # монстр растёт, пока летит в экран
+        dist = 1250 * (1 - e) + 175 * 1.25
+        sway = math.sin(k * 11) * 200 * (1 - e)                 # виляет по дуге, как зверь, который ловит момент
+        hx, hy = P[0] - f[0] * dist + p[0] * sway + ox, P[1] - f[1] * dist + p[1] * sway + oy
+        open_k = (0.2 + k) if k <= 0.3 else 0.2 + 0.8 * abs(math.sin(pn.t * 36))      # пасть ЩЁЛКАЕТ
+        sc_.ang = self.ang
+        f2, oa, L, tips = sc_.draw_maw(hx, hy, sc, open_k, pn.t)
+        sc_.draw_jaws(hx, hy, sc, oa, L, tips, pn.t, open_k)
+        scr.blit(random.choice(self.tex.grain), (0, 0))
+        if not self.cfg.gentle:
+            screen_glitch(scr, 0.25 + 0.75 * e, False)
+        if random.random() < 0.07 * (1 + 2 * e) * calm:         # чёрные кадры «короткого замыкания»
+            self.flash.fill((0, 0, 0))
+            self.flash.set_alpha(255)
+            scr.blit(self.flash, (0, 0))
+        if k > 0.88:                                            # вспышка в момент, когда пасть закрывает экран
+            self.flash.fill((255, 255, 255) if not self.cfg.gentle else (200, 200, 200))
+            self.flash.set_alpha(int(clamp(255 * (k - 0.88) / 0.12, 0, 255)))
+            scr.blit(self.flash, (0, 0))
+
+
 # ------------------------------------------------------------------ ВВОД
 class InputRouter:
     """Переводит события и опрос клавиатуры pygame в команды. Никакой игровой логики."""
@@ -5619,7 +5726,7 @@ class InputRouter:
 class Game:
     """
     Приложение: окно, главный цикл и конечный автомат состояний
-    (menu -> prologue -> floor -> play <-> pause -> struggle -> caught -> lose | cinematic | cutscene -> boss -> win).
+    (menu -> prologue -> floor -> play <-> pause -> pounce -> struggle -> caught -> lose | cinematic | cutscene -> boss -> win).
     Сам ничего не считает и не рисует: связывает компоненты и передаёт им управление.
     """
 
@@ -5663,6 +5770,9 @@ class Game:
                                               sprites=self.sprites, struggle=self.struggle, tex=self.tex, text=self.text)
         self.prologue = PrologueSystem(audio=self.audio, s=self.s)
         self.prologue_view = PrologueRenderer(clock=self.clock, prologue=self.prologue, screen=self.screen, tex=self.tex, text=self.text)
+        self.pounce = PounceSystem(audio=self.audio, s=self.s)
+        self.pounce_view = PounceRenderer(cfg=self.cfg, clock=self.clock, pounce=self.pounce, scare=self.scare, s=self.s,
+                                          screen=self.screen, sprites=self.sprites, tex=self.tex)
         self.cin = CinematicSystem(audio=self.audio, s=self.s)
         self.cin_view = CinematicRenderer(cin=self.cin, clock=self.clock, screen=self.screen, tex=self.tex, text=self.text)
         self.fx = PostFX(atmo=self.atmo, cfg=self.cfg, clock=self.clock, s=self.s, screen=self.screen, tex=self.tex)
@@ -5729,6 +5839,15 @@ class Game:
         self.cin_view.prepare()
         self.screens.start_fade(0.4)
         self.state = "cinematic"
+        pygame.mouse.set_visible(False)
+
+    def begin_pounce(self):
+        """Монстр прыгает на камеру (как Фокси в FNaF 2) — мгновение спустя он уже на герое."""
+        self.audio.stop("alarm")
+        self.pounce.begin()
+        self.pounce_view.begin()
+        self.s.hidden = False
+        self.state = "pounce"
         pygame.mouse.set_visible(False)
 
     def begin_struggle(self):
@@ -5842,8 +5961,10 @@ class Game:
             elif ev == "watcher":
                 self.audio.play("breath", vol=0.7)
                 self.audio.play("static", vol=0.4)
-            elif ev == "caught":                     # поймал: сначала схватка (10 раз ПРОБЕЛ за 3 секунды)
+            elif ev == "caught":                     # поймал: бросок на камеру, затем схватка (10 раз ПРОБЕЛ за 3 секунды)
                 self.lose_boss = False
+                self.begin_pounce()
+            elif ev == "pounce_done":
                 self.begin_struggle()
             elif ev == "struggle_won":
                 self.end_struggle()
@@ -6004,6 +6125,11 @@ class Game:
             self.dispatch_events()
             if self.state == "prologue":
                 self.prologue_view.draw()
+        elif st == "pounce":
+            self.pounce.update(dt)
+            self.dispatch_events()
+            if self.state == "pounce":
+                self.pounce_view.draw()
         elif st == "cinematic":
             self.cin.update(dt)
             self.dispatch_events()
