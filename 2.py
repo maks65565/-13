@@ -24,6 +24,8 @@
     F8 / F9 / F10   — ЧИТЫ: F8 — следующий этаж, F9 — все ключи + заряд + телепорт к двери, F10 — сразу финал
     TAB             — архив прочитанных записок
     ВНИЗ НА -10     — на этаже -3 лифт срывается и падает в шахту: найди динамит и взорви завал (секретная концовка)
+    АВАНПОСТ -6     — консоль дальней связи (вызови вертолёт и продержись минуту), антидот и ампула сыворотки:
+                      три новые концовки (эвакуация, «Новая плоть», «Все живы» — антидот в финальном выборе, клавиша 3)
     ПРОБЕЛ x10      — когда монстр схватил: 10 нажатий за 3 секунды, чтобы вырваться (иначе — скример)
     P или ESC       — пауза
 
@@ -47,7 +49,8 @@
                   RadioSystem (сюжетные реплики по событиям), AchievementTracker (достижения),
                   StruggleFight (схватка: QTE), PrologueSystem (вступительная кат-сцена),
                   CinematicSystem (падение лифта, подрыв завала), CinematicRenderer (их рисование),
-                  PounceSystem / PounceRenderer (бросок монстра на камеру в момент поимки, как у Фокси)
+                  PounceSystem / PounceRenderer (бросок монстра на камеру в момент поимки, как у Фокси),
+                  EvacSystem (эвакуация с аванпоста)
     Ресурсы       Textures (процедурные картинки), SoundBank (синтез звуков)
     Отрисовка     TextRenderer, Camera, WorldPainter, LightingRenderer, SpriteRenderer, PostFX, Hud, Minimap,
                   ScreenRenderer (меню/пауза/поимка/итоги), PlayView (порядок слоёв кадра),
@@ -94,12 +97,20 @@ DIFFS = [
     {"name": "КОШМАР", "mspeed": 1.15, "drain": 0.75, "bats": 5, "hear": 1.25, "hunt": 0.45},
 ]
 
-FLOORS = [   # маршрут: -3 -> (лифт падает) -> -10 -> -2 -> -1 -> финал; на -10 можно уйти в секретную концовку
+EVAC_TIME = 60.0      # секунд ждать вертолёт после вызова с аванпоста
+
+FLOORS = [   # маршрут: -3 -> (лифт падает) -> -10 -> -8 -> -6 АВАНПОСТ -> -4 -> -2 -> -1 -> финал
     {"name": "ЭТАЖ -3", "title": "ЛАБОРАТОРНЫЙ КОРПУС", "keys": 2, "mspeed": 0.90, "broken": 0.35, "bats_d": 1, "next": 3},
     {"name": "ЭТАЖ -2", "title": "ОПЫТНЫЙ СЕКТОР", "keys": 3, "mspeed": 1.00, "broken": 0.50, "bats_d": 0, "next": 2},
     {"name": "ЭТАЖ -1", "title": "ШЛЮЗ ГЛУБИНЫ", "keys": 3, "mspeed": 1.12, "broken": 0.65, "bats_d": -1, "next": None, "final": True},
-    {"name": "ЭТАЖ -10", "title": "ЗАБРОШЕННАЯ ШАХТА", "keys": 2, "mspeed": 1.05, "broken": 0.85, "bats_d": 0, "next": 1,
+    {"name": "ЭТАЖ -10", "title": "ЗАБРОШЕННАЯ ШАХТА", "keys": 2, "mspeed": 1.05, "broken": 0.85, "bats_d": 0, "next": 4,
      "secret": True, "notes": 0},
+    {"name": "ЭТАЖ -8", "title": "РЕАКТОРНАЯ", "keys": 3, "mspeed": 1.08, "broken": 0.80, "bats_d": 1, "next": 5, "notes": 0,
+     "tint": (255, 205, 170), "metal": True},
+    {"name": "ЭТАЖ -6", "title": "АВАНПОСТ «СЕНТИНЕЛ»", "keys": 2, "mspeed": 0.90, "broken": 0.30, "bats_d": 3, "next": 6, "notes": 4,
+     "outpost": True, "tint": (205, 218, 238), "metal": True},
+    {"name": "ЭТАЖ -4", "title": "СКЛАДЫ", "keys": 3, "mspeed": 1.10, "broken": 0.60, "bats_d": 0, "next": 1, "notes": 0,
+     "tint": (208, 228, 198)},
 ]
 
 RAY_COS = [math.cos(2 * math.pi * i / RAYS) for i in range(RAYS)]
@@ -736,7 +747,7 @@ class SoundBank:
             + 0.40 * math.sin(tau * (2650 * t + 420 * math.sin(tau * 11 * t)))
             + 0.55 * random.uniform(-1, 1) * math.exp(-max(0.0, t - 0.1) * 1.2)
             + 1.00 * math.sin(tau * 36 * t) * math.exp(-t * 3.0))
-            * min(1.0, t * 60) * math.exp(-max(0.0, t - 1.7) * 3.0), 0.95)
+            * min(1.0, t * 60) * math.exp(-max(0.0, t - 1.7) * 3.0), 0.95, echo=((0.10, 0.28), (0.24, 0.16)))
         # --- атмосфера и интерфейс
         self.sounds["whisper"] = self.make(2.4, lambda t: (random.uniform(-1, 1) * (0.5 + 0.5 * math.sin(tau * 6.5 * t))
                                                            * (0.4 + 0.6 * abs(math.sin(tau * 1.1 * t))) * 0.55
@@ -744,15 +755,15 @@ class SoundBank:
                                            * math.sin(math.pi * t / 2.4), 0.55)
         self.sounds["bang"] = self.make(1.2, lambda t: math.sin(tau * 130 * t) * math.exp(-t * 7)
                                         + 0.7 * math.sin(tau * 410 * t) * math.exp(-t * 11)
-                                        + random.uniform(-1, 1) * 0.4 * math.exp(-t * 20), 0.8)
+                                        + random.uniform(-1, 1) * 0.4 * math.exp(-t * 20), 0.8, echo=((0.10, 0.35), (0.23, 0.20)))
         self.sounds["scratch"] = self.make(1.6, lambda t: random.uniform(-1, 1) * (0.5 + 0.5 * math.sin(tau * 14 * t))
                                            * abs(math.sin(tau * 2.2 * t)) * math.sin(math.pi * t / 1.6), 0.45)
         self.sounds["breath"] = self.make(1.9, lambda t: (random.uniform(-1, 1) * (0.6 + 0.4 * math.sin(tau * 5 * t))
                                                           + 0.35 * math.sin(tau * 62 * t)) * math.sin(math.pi * t / 1.9) ** 2, 0.6)
         self.sounds["ding"] = self.make(1.4, lambda t: (math.sin(tau * 988 * t) + 0.5 * math.sin(tau * 1976 * t))
-                                        * math.exp(-t * 3.2), 0.4)
+                                        * math.exp(-t * 3.2), 0.4, echo=((0.17, 0.35), (0.34, 0.20)))
         self.sounds["door"] = self.make(1.2, lambda t: (random.uniform(-1, 1) * 0.5 * (0.5 + 0.5 * math.sin(tau * 28 * t))
-                                                        + 0.4 * math.sin(tau * (90 + 60 * t) * t)) * math.sin(math.pi * t / 1.2), 0.55)
+                                                        + 0.4 * math.sin(tau * (90 + 60 * t) * t)) * math.sin(math.pi * t / 1.2), 0.55, echo=((0.10, 0.25), (0.22, 0.15)))
         self.sounds["rustle"] = self.make(0.5, lambda t: random.uniform(-1, 1) * math.sin(math.pi * t / 0.5)
                                           * (0.5 + 0.5 * math.sin(tau * 40 * t)), 0.4)
         self.sounds["beep"] = self.make(0.35, lambda t: math.sin(tau * 1760 * t) * (1.0 if (t * 12) % 2 < 1 else 0.0), 0.3)
@@ -764,14 +775,14 @@ class SoundBank:
         self.sounds["roar"] = self.make(2.2, lambda t: ((((t * 52) % 1.0) * 2 - 1) * 0.5 * (0.7 + 0.3 * math.sin(tau * 11 * t))
                                                         + math.sin(tau * (180 + 60 * math.sin(tau * 5 * t)) * t) * 0.35
                                                         + random.uniform(-1, 1) * 0.35)
-                                        * min(1.0, t * 12) * math.exp(-max(0.0, t - 1.2) * 2.2), 0.9)
+                                        * min(1.0, t * 12) * math.exp(-max(0.0, t - 1.2) * 2.2), 0.9, echo=((0.12, 0.30), (0.27, 0.18)))
         self.sounds["hum"] = self.make(2.0, lambda t: math.sin(tau * 55 * t) * 0.5
                                        + math.sin(tau * 110 * t + 1.3 * math.sin(tau * 2 * t)) * 0.3
                                        + random.uniform(-1, 1) * 0.05, 0.35)
         self.sounds["shriek"] = self.make(1.3, lambda t: (math.sin(tau * (3400 + 500 * math.sin(tau * 19 * t)) * t) * 0.55
                                                           + math.sin(tau * 5200 * t) * math.sin(tau * 230 * t) * 0.4
                                                           + random.uniform(-1, 1) * 0.35)
-                                          * min(1.0, t * 80) * math.exp(-max(0.0, t - 0.5) * 2.5), 0.7)
+                                          * min(1.0, t * 80) * math.exp(-max(0.0, t - 0.5) * 2.5), 0.7, echo=((0.09, 0.30), (0.20, 0.18)))
         self.sounds["sub"] = self.make(1.0, lambda t: math.sin(tau * (60 - 25 * t) * t) * math.exp(-t * 2.5), 1.0)
         # музыка боя: пульсирующий бас + диссонанс (233 и 247 Гц) + тихие «хэты»; ровно 4 с — зацикливается без щелчка
         self.sounds["boss_music"] = self.make(4.0, lambda t: 0.55 * math.sin(tau * 55 * t)
@@ -867,6 +878,134 @@ class SoundBank:
                                    ("mus_finale", 8.0, music_finale, 0.7), ("mus_win", 10.0, music_win, 0.75),
                                    ("mus_lose", 6.0, music_lose, 0.7)):
             self.sounds[name] = self.make_music(dur, fn, vol)
+        # ================== НОВЫЕ ТРЕКИ: пещера, реактор, аванпост, склады, эвакуация, финалы ==================
+        def music_floor3(t):                     # -10: пещера — низкие дроны, хор, редкие капли
+            drone = 0.30 * math.sin(tau * 41 * t) + 0.22 * math.sin(tau * 61.5 * t + 0.8 * math.sin(tau * 0.25 * t))
+            choir = 0.07 * (math.sin(tau * 220 * t) + math.sin(tau * 277.5 * t) + math.sin(tau * 330 * t)) \
+                * (0.5 + 0.5 * math.sin(tau * 0.125 * t - 1.2)) ** 2
+            q = t % 2.0
+            return drone + choir + math.sin(tau * (1500 - 700 * q) * q) * math.exp(-q * 28) * 0.16
+
+        def music_floor4(t):                     # -8: реактор — тяжёлый пульс, шипение пара, удары металла
+            q = t % 1.0
+            hp = t % 2.0
+            cp = t % 4.0
+            return (math.sin(tau * 36 * q) * math.exp(-q * 5) * 0.5
+                    + 0.18 * math.sin(tau * 55 * t) * (0.6 + 0.4 * math.sin(tau * 0.25 * t)) + 0.10 * math.sin(tau * 110.5 * t)
+                    + random.uniform(-1, 1) * math.exp(-hp * 3.0) * 0.12 * (1.0 if hp < 1.2 else 0.0)
+                    + (math.sin(tau * 312 * cp) + 0.6 * math.sin(tau * 541 * cp)) * math.exp(-cp * 5) * 0.14)
+
+        arp5 = (220.0, 262.0, 330.0, 262.0, 196.0, 247.0, 294.0, 247.0)
+
+        def music_outpost(t):                    # -6: аванпост — холодное арпеджио, пад, редкие писки рации
+            ph = t % 0.5
+            f = arp5[int(t / 0.5) % 8]
+            pluck = (math.sin(tau * f * ph) + 0.3 * math.sin(tau * 2 * f * ph)) * math.exp(-ph * 7) * 0.22
+            pad = (0.16 * math.sin(tau * 55 * t) + 0.12 * math.sin(tau * 82.5 * t + 0.6 * math.sin(tau * 0.125 * t))
+                   + 0.08 * math.sin(tau * 131 * t)) * (0.7 + 0.3 * math.sin(tau * 0.25 * t))
+            q = t % 4.0
+            return pluck + pad + math.sin(tau * 1500 * q) * 0.10 * (1.0 if (q < 0.06 or 0.22 < q < 0.28) else 0.0)
+
+        def music_floor5(t):                     # -4: склады — тиканье, сквозняк, звон металла
+            q = t % 1.0
+            cp = t % 4.0
+            return (math.sin(tau * 900 * q) * math.exp(-q * 70) * 0.12 * (1.0 if int(t) % 2 == 0 else 0.6)
+                    + 0.30 * math.sin(tau * 36.5 * t) * (0.5 + 0.5 * math.sin(tau * 0.125 * t))
+                    + random.uniform(-1, 1) * 0.06 * (0.5 + 0.5 * math.sin(tau * 0.25 * t + 1.0)) ** 2
+                    + math.sin(tau * 1175 * cp) * math.exp(-cp * 2.2) * 0.12 + math.sin(tau * 1760 * cp) * math.exp(-cp * 3) * 0.06)
+
+        bass_ev = (55.0, 55.0, 49.0, 58.3)
+
+        def music_evac(t):                       # эвакуация: быстрый ритм, бас-ход, сирена
+            kp = t % 0.5
+            hp = t % 0.25
+            sp = (t + 0.5) % 1.0
+            bp = t % 0.25
+            return (math.sin(tau * (45 + 120 * math.exp(-kp * 35)) * kp) * math.exp(-kp * 9) * 0.6
+                    + random.uniform(-1, 1) * math.exp(-hp * 55) * 0.14 + random.uniform(-1, 1) * math.exp(-sp * 13) * 0.3
+                    + math.sin(tau * bass_ev[int(t) % 4] * bp) * math.exp(-bp * 6) * 0.38
+                    + 0.10 * math.sin(tau * 520 * t + 140 * math.sin(tau * 0.5 * t)))
+
+        def music_win_dark(t):                   # концовки «Тишина» и «Новая плоть»: минорный пад и колокол
+            q = t % 2.0
+            pad = (0.20 * math.sin(tau * 55 * t) + 0.16 * math.sin(tau * 65.5 * t + 0.4 * math.sin(tau * 0.125 * t))
+                   + 0.10 * math.sin(tau * 131 * t)) * math.sin(math.pi * t / 8.0) ** 0.5
+            return (pad + (math.sin(tau * 220 * q) + 0.5 * math.sin(tau * 330.5 * q)) * math.exp(-q * 1.4) * 0.18) * min(1.0, (8.0 - t) / 2.0)
+
+        warm = (220.0, 277.2, 329.6, 440.0, 554.4, 440.0, 329.6, 277.2, 220.0, 329.6)
+
+        def music_win_warm(t):                   # «Искупление», «Все живы», «Эвакуация»: тёплое мажорное арпеджио
+            ph = t % 1.0
+            f = warm[int(t) % 10]
+            arp = (math.sin(tau * f * ph) + 0.5 * math.sin(tau * 2 * f * ph) + 0.2 * math.sin(tau * 3 * f * ph)) * math.exp(-ph * 2.0) * 0.26
+            pad = (0.17 * math.sin(tau * 110 * t) + 0.13 * math.sin(tau * 138.6 * t) + 0.11 * math.sin(tau * 165 * t)
+                   + 0.07 * math.sin(tau * 220 * t)) * math.sin(math.pi * t / 10.0) ** 0.5
+            return (arp + pad) * min(1.0, (10.0 - t) / 2.0)
+
+        brass = (196.0, 196.0, 261.6, 329.6, 392.0, 392.0, 329.6, 392.0)
+
+        def music_win_blast(t):                  # «Взрывной побег»: фанфары и литавры
+            ph = t % 1.0
+            kp = t % 2.0
+            f = brass[int(t) % 8]
+            horn = (((f * ph) % 1.0 * 2 - 1) * 0.5 + math.sin(tau * f * ph) * 0.5) * 0.28 * min(1.0, ph * 12) * math.exp(-ph * 1.1)
+            return (horn + math.sin(tau * (70 - 25 * kp) * kp) * math.exp(-kp * 3.0) * 0.5) * min(1.0, (8.0 - t) / 1.5)
+
+        for name, dur, fn, vol in (("mus_floor3", 8.0, music_floor3, 0.7), ("mus_floor4", 8.0, music_floor4, 0.7),
+                                   ("mus_outpost", 8.0, music_outpost, 0.7), ("mus_floor5", 8.0, music_floor5, 0.7),
+                                   ("mus_evac", 4.0, music_evac, 0.75), ("mus_win_dark", 8.0, music_win_dark, 0.7),
+                                   ("mus_win_warm", 10.0, music_win_warm, 0.75), ("mus_win_blast", 8.0, music_win_blast, 0.75)):
+            self.sounds[name] = self.make_music(dur, fn, vol)
+
+        # --- фоновая «комнатная» атмосфера каждого типа этажа (6 секунд, считается через 3 отсчёта)
+        def amb_lab(t):                          # лаборатория: гул ламп и вентиляции
+            return (0.12 * math.sin(tau * 50 * t) + 0.05 * math.sin(tau * 100 * t)
+                    + 0.03 * math.sin(tau * 120 * t) * (0.6 + 0.4 * math.sin(tau * t / 2.0))
+                    + random.uniform(-1, 1) * 0.035 * (0.5 + 0.5 * math.sin(tau * t / 6.0)))
+
+        def amb_shaft(t):                        # шахта: ветер и капли
+            q = t % 3.0
+            return (random.uniform(-1, 1) * 0.07 * (0.5 + 0.5 * math.sin(tau * t / 6.0 + 0.5)) ** 2
+                    + 0.06 * math.sin(tau * 42 * t) * (0.5 + 0.5 * math.sin(tau * t / 3.0))
+                    + math.sin(tau * (1300 - 500 * q) * q) * math.exp(-q * 30) * 0.10)
+
+        def amb_reactor(t):                      # реактор: низкий гул и шипение пара
+            q = t % 3.0
+            return (0.20 * math.sin(tau * 28 * t) + 0.10 * math.sin(tau * 56.5 * t)
+                    + random.uniform(-1, 1) * 0.07 * math.exp(-q * 2.0) * (1.0 if q < 1.5 else 0.4))
+
+        def amb_outpost(t):                      # аванпост: генератор и обрывки радио
+            gate = 1.0 if int(t * 7) % 5 < 2 else 0.0
+            return (0.10 * math.sin(tau * 60 * t) + 0.04 * math.sin(tau * 180 * t)
+                    + random.uniform(-1, 1) * 0.05 * gate * (0.5 + 0.5 * math.sin(tau * 3 * t)))
+
+        def amb_warehouse(t):                    # склады: сквозняк и скрип стеллажей
+            q = t % 3.0
+            return (random.uniform(-1, 1) * 0.04 * (0.5 + 0.5 * math.sin(tau * t / 6.0)) + 0.06 * math.sin(tau * 33 * t)
+                    + math.sin(tau * (180 - 50 * q) * q + 3 * math.sin(tau * 8 * q)) * math.sin(math.pi * q / 3.0) ** 3 * 0.08)
+
+        for name, fn in (("amb_lab", amb_lab), ("amb_shaft", amb_shaft), ("amb_reactor", amb_reactor),
+                         ("amb_outpost", amb_outpost), ("amb_warehouse", amb_warehouse)):
+            self.sounds[name] = self.make_music(6.0, fn, 0.8, True, 3)
+
+        # --- новые эффекты
+        self.sounds["rotor"] = self.make(1.0, lambda t: (random.uniform(-1, 1) * 0.35 + math.sin(tau * 70 * t) * 0.5
+                                                         + math.sin(tau * 140 * t) * 0.2) * (0.45 + 0.55 * abs(math.sin(math.pi * 11 * t))), 0.55)
+        self.sounds["gulp"] = self.make(0.7, lambda t: math.sin(tau * (160 - 100 * t) * t) * math.exp(-t * 5)
+                                        + (0.6 * math.sin(tau * (180 - 110 * (t - 0.3)) * (t - 0.3)) * math.exp(-(t - 0.3) * 9) if t > 0.3 else 0.0), 0.8)
+        self.sounds["transform"] = self.make(2.6, lambda t: (((t * 38) % 1.0) * 2 - 1) * 0.35 * min(1.0, t * 3) * (0.6 + 0.4 * math.sin(tau * 9 * t))
+                                             + math.sin(tau * (200 + 900 * t / 2.6) * t) * 0.35 * min(1.0, t)
+                                             + random.uniform(-1, 1) * 0.4 * abs(math.sin(tau * 13 * t)), 0.9)
+        self.sounds["keypad"] = self.make(0.14, lambda t: math.sin(tau * 1320 * t) * math.exp(-t * 28) * 0.7
+                                          + (math.sin(tau * 1760 * t) * math.exp(-t * 26) * 0.5 if t > 0.06 else 0.0), 0.5)
+        self.sounds["console_on"] = self.make(0.8, lambda t: sum(math.sin(tau * f * t) * math.exp(-(t - d) * 14)
+                                                                 for f, d in ((880, 0.0), (1175, 0.12), (1480, 0.24), (1760, 0.4)) if t >= d) * 0.4, 0.5)
+        self.sounds["step_metal"] = self.make(0.14, lambda t: (math.sin(tau * 160 * t) * 0.5 + math.sin(tau * 2200 * t) * 0.35 * math.exp(-t * 60)
+                                                               + random.uniform(-1, 1) * 0.25) * math.exp(-t * 30), 0.55,
+                                              echo=((0.05, 0.3), (0.11, 0.15)))
+        self.sounds["step_metal2"] = self.make(0.14, lambda t: (math.sin(tau * 120 * t) * 0.5 + math.sin(tau * 1800 * t) * 0.35 * math.exp(-t * 55)
+                                                                + random.uniform(-1, 1) * 0.25) * math.exp(-t * 28), 0.55,
+                                               echo=((0.06, 0.3), (0.12, 0.15)))
         self.sounds["crunch"] = self.make(1.1, lambda t: math.sin(tau * 62 * t) * math.exp(-t * 9)
                                           + random.uniform(-1, 1) * (math.exp(-t * 18) + 0.8 * math.exp(-abs(t - 0.16) * 30)
                                                                      + 0.6 * math.exp(-abs(t - 0.32) * 30)), 0.95)
@@ -879,12 +1018,12 @@ class SoundBank:
                                             * min(1.0, (2.2 - t) / 0.5), 0.5)
         self.sounds["sting"] = self.make(0.9, lambda t: (math.sin(tau * 2093 * t) + math.sin(tau * 2217 * t)
                                                          + 0.5 * random.uniform(-1, 1)) * math.exp(-t * 4.5) * 0.5
-                                         + math.sin(tau * 50 * t) * math.exp(-t * 6), 0.7)
+                                         + math.sin(tau * 50 * t) * math.exp(-t * 6), 0.7, echo=((0.13, 0.30), (0.28, 0.16)))
         self.sounds["static"] = self.make(0.3, lambda t: random.uniform(-1, 1) * math.exp(-t * 9), 0.5)
         self.sounds["pounce"] = self.make(0.95, lambda t: (math.sin(tau * (700 + 2600 * t) * t) * 0.5
                                                          + math.sin(tau * 90 * t) * math.sin(tau * (1500 + 900 * math.sin(tau * 30 * t)) * t) * 0.5
                                                          + random.uniform(-1, 1) * 0.55)
-                                          * min(1.0, t * 25) * max(0.0, min(1.0, (0.95 - t) / 0.25)), 0.9)
+                                          * min(1.0, t * 25) * max(0.0, min(1.0, (0.95 - t) / 0.25)), 0.9, echo=((0.08, 0.30), (0.19, 0.18)))
         self.sounds["radio"] = self.make(0.5, lambda t: random.uniform(-1, 1) * 0.5 * math.exp(-t * 4)
                                          + (math.sin(tau * 1400 * t) * 0.4 if t < 0.07 else 0.0), 0.45)
         self.sounds["reload"] = self.make(0.45, lambda t: math.sin(tau * 2100 * t) * math.exp(-t * 70)
@@ -907,13 +1046,13 @@ class SoundBank:
         self.sounds["mstep"] = self.make(0.22, lambda t: (math.sin(tau * 45 * t) + random.uniform(-1, 1) * 0.3)
                                     * math.exp(-t * 20), 0.9)
         self.sounds["shot"] = self.make(0.7, lambda t: random.uniform(-1, 1) * math.exp(-t * 18)
-                                   + 0.9 * math.sin(tau * (160 - 120 * t) * t) * math.exp(-t * 8), 0.95)
+                                   + 0.9 * math.sin(tau * (160 - 120 * t) * t) * math.exp(-t * 8), 0.95, echo=((0.06, 0.40), (0.14, 0.25), (0.26, 0.12)))
         self.sounds["rumble"] = self.make(2.6, lambda t: (random.uniform(-1, 1) * 0.5 + math.sin(tau * 38 * t) * 0.7
                                                      + math.sin(tau * 23 * t) * 0.5) * min(1.0, t * 3)
-                                     * math.exp(-max(0.0, t - 1.5) * 2), 0.9)
+                                     * math.exp(-max(0.0, t - 1.5) * 2), 0.9, echo=((0.20, 0.30), (0.45, 0.18)))
         self.sounds["crash"] = self.make(1.4, lambda t: (random.uniform(-1, 1) * 0.9
                                                     + math.sin(tau * 40 * t) * 0.8 * math.exp(-t * 5))
-                                    * math.exp(-t * 3.2), 1.0)
+                                    * math.exp(-t * 3.2), 1.0, echo=((0.09, 0.40), (0.21, 0.25), (0.37, 0.12)))
         self.sounds["alarm"] = self.make(2.0, lambda t: math.sin(tau * 520 * t + 110 * math.sin(tau * 1.5 * t)) * 0.6, 0.35)
         self.sounds["creak"] = self.make(1.0, lambda t: math.sin(tau * (150 - 40 * t) * t + 3 * math.sin(tau * 9 * t))
                                     * 0.5 * math.sin(math.pi * t) + random.uniform(-0.08, 0.08), 0.5)
@@ -923,29 +1062,45 @@ class SoundBank:
                                                      + math.sin(tau * 3100 * t) * 0.5 * math.exp(-t * 26)
                                                      + math.sin(tau * 4700 * t) * 0.3 * math.exp(-t * 40)), 0.8)
 
-    def make(self, dur, fn, vol):
+    def make(self, dur, fn, vol, echo=None):
+        """Синтез по формуле fn(t). echo — [(задержка_с, громкость)...]: затухающее эхо, звук «стоит в помещении»."""
         n = int(self.rate * dur)
+        vals = [clamp(fn(i / self.rate), -1.0, 1.0) * vol for i in range(n)]
+        if echo:
+            vals += [0.0] * int(max(d for d, _ in echo) * self.rate)
+            out = list(vals)
+            for d, g in echo:
+                k = int(d * self.rate)
+                for i in range(k, len(vals)):
+                    out[i] += vals[i - k] * g
+            vals = [clamp(v, -1.0, 1.0) for v in out]
         buf = bytearray()
-        for i in range(n):
-            v = clamp(fn(i / self.rate), -1.0, 1.0) * vol
-            b = int(v * 32767).to_bytes(2, "little", signed=True)
-            buf += b * self.ch
-        return pygame.mixer.Sound(buffer=bytes(buf))
-
-
-    def make_music(self, dur, fn, vol):
-        """Как make(), но функция считается через отсчёт, а середина интерполируется: вдвое быстрее; музыке хватает."""
-        n = int(self.rate * dur)
-        step = 2.0 / self.rate
-        vals = [fn(k * step) for k in range(n // 2 + 2)]
-        buf = bytearray()
-        for i in range(n):
-            k = i >> 1
-            v = vals[k] if i % 2 == 0 else 0.5 * (vals[k] + vals[k + 1])
-            v = clamp(v, -1.0, 1.0) * vol
+        for v in vals:
             buf += int(v * 32767).to_bytes(2, "little", signed=True) * self.ch
         return pygame.mixer.Sound(buffer=bytes(buf))
 
+    def make_music(self, dur, fn, vol, reverb=True, decim=2):
+        """
+        Музыка и фоны: функция считается через decim отсчётов, остальное интерполируется (быстрее).
+        reverb — три круговых эха («зал»): петля остаётся бесшовной.
+        """
+        n = int(self.rate * dur)
+        step = decim / self.rate
+        loop = n // decim
+        vals = [fn(k * step) for k in range(loop + 2)]
+        if reverb:
+            out = list(vals)
+            for d, g in ((0.19, 0.30), (0.37, 0.20), (0.61, 0.12)):
+                k = int(d * self.rate / decim)
+                for i in range(loop + 2):
+                    out[i] += vals[(i - k) % loop] * g
+            vals = [v * 0.8 for v in out]
+        buf = bytearray()
+        for i in range(n):
+            k, f = divmod(i, decim)
+            v = vals[k] if f == 0 else vals[k] + (vals[k + 1] - vals[k]) * (f / decim)
+            buf += int(clamp(v, -1.0, 1.0) * vol * 32767).to_bytes(2, "little", signed=True) * self.ch
+        return pygame.mixer.Sound(buffer=bytes(buf))
 
 class Audio:
     """Воспроизведение: микшер, громкость, выключение звука, музыкальные слои. Звуки берёт у SoundBank."""
@@ -1151,7 +1306,7 @@ class Monster:
             self.set_goal(g, int(p.x // TILE), int(p.y // TILE))
             self.hear_cd = 0.7
 
-        sp = self.SPEED[self.state] * g.dc["mspeed"] * g.plan["mspeed"]
+        sp = self.SPEED[self.state] * g.dc["mspeed"] * g.plan["mspeed"] * (1.18 if g.evac_t is not None else 1.0)
         if self.state == "chase":
             self.repath -= dt
             if see and line_clear_thick(g.grid, self.x, self.y, p.x, p.y):
@@ -1211,8 +1366,17 @@ class StoryBook:
         ("Заброшенная шахта: сюда не должны были попасть живые.",
          "Трос оборвался, и лифт рухнул на самое дно. Здесь остался динамит рабочих — для обвалов.",
          "Два пути: найти ключи и подняться на лифте — или взорвать завал и выйти прямо на поверхность."),
+        ("Реакторная: стены дрожат, а воздух пахнет озоном.",
+         "Здесь питание всего комплекса. Ржавые трубы шипят паром — и шипят громче шагов.",
+         "Монстр плохо слышит в этом шуме. Но и ты не услышишь его."),
+        ("Аванпост «Сентинел»: военный пост связи, давно покинутый.",
+         "Здесь рация дальней связи, запас батарей и холодильник с образцами доктора Вейры.",
+         "Отсюда можно вызвать помощь — если продержаться минуту. Или сделать выбор посерьёзнее."),
+        ("Склады: лабиринт ящиков, бочек и стеллажей.",
+         "Сквозняк разносит звук шагов по всему этажу.",
+         "Один лифт отделяет тебя от этажей, где всё началось."),
     ]
-    TOTAL_NOTES = 18
+    TOTAL_NOTES = 22
     NOTES = {
         0: [("ЖУРНАЛ ИССЛЕДОВАТЕЛЯ, день 41",
              "Проект «ГЛУБИНА» задумывался как лекарство от старения. Сыворотку получили из грибницы под шахтой. "
@@ -1267,6 +1431,18 @@ class StoryBook:
             ("КАРТОЧКА ОБРАЗЦА №12",
              "Марк Ковальски. Иммунитет к грибнице: полный. Побочный эффект: слышит образца №13 через рацию. "
              "Рекомендовано наблюдение. Не сообщать образцу о его состоянии.")],
+        5: [("ЖУРНАЛ КОМАНДИРА АВАНПОСТА",
+             "Аванпост «Сентинел» держит дальнюю связь с поверхностью. Нам приказали ждать эвакуации, но борт так и не пришёл. "
+             "Я начинаю думать, что нас просто списали."),
+            ("ЗАПИСКА НА КОНСОЛИ",
+             "Рация работает, если есть питание и ключ-карта оператора. Нажмёшь вызов — вертолёт прилетит через минуту. "
+             "Продержись. Монстр слышит сигнал, он придёт."),
+            ("ХОЛОДИЛЬНИК №2",
+             "Здесь лежит антидот доктора Вейры. Один шприц. Она писала: это единственный шанс вернуть Томаса, если он ещё слышит. "
+             "Рядом — ампула сыворотки. НЕ ТРОГАТЬ."),
+            ("ПОСЛЕДНЯЯ ЗАПИСЬ СЕРЖАНТА",
+             "Я выпил сыворотку. Хотел стать сильным, чтобы выжить. Теперь я слышу всех на этажах — и они слышат меня. "
+             "Не повторяй моей ошибки.")],
     }
     RADIO = {      # реплики по рации; каждая группа звучит один раз за прохождение
         "floor_start_0": [("ЛЕНА", "Эй... ты слышишь? Я Лена, поймала сигнал вашего бункера. Найди ключи от лифта — я на связи.")],
@@ -1293,6 +1469,14 @@ class StoryBook:
         "note_2_3": [("ЛЕНА", "Он писал это тебе: «Скажи Лене, что я не боялся». Не оставляй его там, Марк.")],
         "note_2_4": [("ЛЕНА", "Они вывезли сыворотку наверх... Значит, Кесслер уже на поверхности. И он знает про тебя.")],
         "note_2_5": [("ЛЕНА", "Ты слышишь его через рацию — поэтому в эфире этот шёпот. Он зовёт нас обоих.")],
+        "floor_start_4": [("ЛЕНА", "Реакторная... Осторожнее: трубы шипят паром, а в шуме ты не услышишь шаги. Держись подальше от горячих секций.")],
+        "floor_start_5": [("ЛЕНА", "Аванпост «Сентинел»! Там рация дальней связи. Возьми хоть один ключ и нажми вызов — за тобой пришлют вертолёт.")],
+        "floor_start_6": [("ЛЕНА", "Склады. Тихо: сквозняк разносит шаги по всему этажу. Скоро ты будешь на этаже, с которого всё началось.")],
+        "evac_start": [("ЛЕНА", "Вызов принят! Вертолёт будет через минуту! Продержись, Марк! Монстр слышит сигнал — он идёт к тебе!")],
+        "evac_half": [("ЛЕНА", "Тридцать секунд! Они уже над лесом! Не дай себя поймать, Марк!")],
+        "antidote_found": [("ЛЕНА", "Антидот Вейры?! Береги его, Марк. Если Томми ещё слышит нас — это шанс вернуть его живым.")],
+        "serum_seen": [("ЛЕНА", "Не пей это, Марк! Из этой ампулы ничего хорошего не выходит. Просто обойди.")],
+        "console_hint": [("ЛЕНА", "Это консоль дальней связи. Нужна ключ-карта оператора — возьми хоть один ключ, и я вызову вертолёт.")],
         "floor_start_3": [("ЛЕНА", "Марк?! Связь рвётся... Лифт упал на -10? Там старые шахты. Ищи динамит — рабочие оставляли его для обвалов.")],
         "dynamite_found": [("ЛЕНА", "Динамит! Занеси его к завалу в конце шахты — взрыв пробьёт путь наверх. Или найди ключи и поднимайся на лифте.")],
         "blast_hint": [("ЛЕНА", "Это завал — тупик старой шахты. Подорвёшь его — выйдешь прямо на поверхность. Но взрыв услышит всё живое...")],
@@ -1308,6 +1492,21 @@ class StoryBook:
         "kill": "[2]  ДОБИТЬ — выстрелить",
     }
     ENDINGS = {
+        "evac": ("ЭВАКУАЦИЯ", (120, 200, 255),
+                 ["Ты нажал вызов и продержался минуту, которая показалась годом. Сквозь шум пробился рокот винтов.",
+                  "Вертолёт сел у люка. Солдаты втащили тебя внутрь и закрыли дверь.",
+                  "Лена ждала на базе. Но вопросы о «ГЛУБИНЕ» засекретили, а тебя отправили на карантин.",
+                  "Ты спасён. Но никто так и не узнал, что осталось на нижних этажах."]),
+        "serum": ("НОВАЯ ПЛОТЬ", (210, 60, 60),
+                  ["Ты выпил сыворотку. Боль была короткой, потом пришла ясность. Тьма внизу перестала быть тьмой.",
+                   "Ты слышишь каждого на этаже. И все они слышат тебя.",
+                   "Лена зовёт по рации: «Марк? Марк, ответь!» — а ты уже не можешь говорить.",
+                   "Скоро кто-то спустится сюда. И «Бункер-13» получит нового хозяина."]),
+        "cure": ("ВСЕ ЖИВЫ", (150, 255, 190),
+                 ["Ты ввёл антидот. Томас вздрогнул, и чёрные глаза стали обычными. Он заплакал, как человек.",
+                  "Вы вместе поднялись наверх. Лена ждала у лифта. Она обняла брата и не отпускала всю ночь.",
+                  "Кесслера нашли по записи рации. «Проект ГЛУБИНА» закрыли, «Бункер-13» залили бетоном.",
+                  "Единственная концовка, где не остался ни один монстр. Только трое людей и кошка, которую наконец покормили."]),
         "blast": ("ВЗРЫВНОЙ ПОБЕГ", (255, 170, 70),
                   ["Ты зажёг фитиль и укрылся за ящиками. Грохот прокатился по шахте — и сверху хлынул настоящий дневной свет.",
                    "Ты выбрался на поверхность в обход лифтов, этажей и монстра. Рация шипела от помех.",
@@ -1335,7 +1534,7 @@ class StoryBook:
 class Level:
     """Готовый уровень: сетка и расстановка предметов (только данные)."""
 
-    def __init__(self, grid, floors, exit_cell, keys, bats, botts, lockers, lamps, monster_cell, notes, dynamite, blast_cell):
+    def __init__(self, grid, floors, exit_cell, keys, bats, botts, lockers, lamps, monster_cell, notes, dynamite, blast_cell, extras):
         self.grid = grid
         self.floors = floors
         self.exit_cell = exit_cell
@@ -1348,6 +1547,7 @@ class Level:
         self.notes = notes
         self.dynamite = dynamite
         self.blast_cell = blast_cell
+        self.extras = extras
 
 
 class LevelBuilder:
@@ -1455,8 +1655,22 @@ class LevelBuilder:
             dc = [c for c in floors if dist[c[1]][c[0]] >= 14 and c not in taken and c != blast_cell
                   and far_enough(c, [blast_cell, exit_cell], 10)] or [random.choice(floors)]
             dyn = [self.item(random.choice(dc))]
+        extras = {"console": None, "antidote": [], "serum": []}
+        if self.plan.get("outpost"):                       # аванпост: консоль дальней связи, антидот и ампула сыворотки
+            used2 = set(keys) | {exit_cell, (1, 1)}
+            far2 = [c for c in floors if dist[c[1]][c[0]] >= 9 and c not in used2]
+            random.shuffle(far2)
+            picks = []
+            for c in far2:
+                if far_enough(c, picks, 9):
+                    picks.append(c)
+                if len(picks) == 3:
+                    break
+            while len(picks) < 3:
+                picks.append(random.choice(floors))
+            extras = {"console": picks[0], "antidote": [self.item(picks[1])], "serum": [self.item(picks[2])]}
         return Level(grid, floors, exit_cell, [self.item(c) for c in keys], [self.item(c) for c in bats],
-                     botts, lockers, lamps, monster_cell, notes, dyn, blast_cell)
+                     botts, lockers, lamps, monster_cell, notes, dyn, blast_cell, extras)
 
 
 class Session:
@@ -1475,6 +1689,9 @@ class Session:
         self.notes = []
         self.dynamite = []
         self.blast_cell = None
+        self.console_cell = None
+        self.antidote = []
+        self.serum = []
         self.floor = 0
         self.player = None
         self.monster = None
@@ -1501,6 +1718,10 @@ class Session:
         self.grace = 0.0                  # секунды неуязвимости после побега из хватки
         self.has_dynamite = False
         self.blast_warn = 0.0
+        self.has_antidote = False         # переносится между этажами
+        self.evac_t = None                # секунды до вертолёта (None — вызова не было)
+        self.evac_done = False
+        self.console_warn = 0.0
         self.notes_read = set()          # (этаж, номер) прочитанных записок — переносится между этажами
         self.radio_seen = set()          # какие радиосцены уже прозвучали
         self.ending = "normal"          # normal | kill | spare
@@ -1529,7 +1750,8 @@ class Session:
         p = self.player
         return {"battery": p.battery, "stamina": p.stamina, "bottles": self.bottles, "stats": dict(self.stats),
                 "play_time": self.play_time, "cheated": self.cheated,
-                "notes_read": set(self.notes_read), "radio_seen": set(self.radio_seen)}
+                "notes_read": set(self.notes_read), "radio_seen": set(self.radio_seen),
+                "has_antidote": self.has_antidote}
 
     def start(self, dc, floor=0, carry=None):
         """Новый этаж floor по сложности dc. carry — вещи и счётчики с предыдущего этажа."""
@@ -1539,6 +1761,7 @@ class Session:
         self.grid, self.floors, self.exit_cell = level.grid, level.floors, level.exit_cell
         self.keys, self.bats, self.botts, self.notes = level.keys, level.bats, level.botts, level.notes
         self.dynamite, self.blast_cell = level.dynamite, level.blast_cell
+        self.console_cell, self.antidote, self.serum = level.extras["console"], level.extras["antidote"], level.extras["serum"]
         self.lockers, self.lamps = level.lockers, level.lamps
         self.reset_flags()
         self.events = []
@@ -1549,6 +1772,7 @@ class Session:
             self.bottles, self.stats = carry["bottles"], carry["stats"]
             self.play_time, self.cheated = carry["play_time"], carry["cheated"]
             self.notes_read, self.radio_seen = set(carry["notes_read"]), set(carry["radio_seen"])
+            self.has_antidote = carry.get("has_antidote", False)
         self.monster.new_patrol_goal(self)
 
 
@@ -1860,7 +2084,9 @@ class Atmosphere:
         if p.moving:
             self.step_t -= dt
             if self.step_t <= 0:
-                self.audio.play("step" if self.step_alt else "step2", vol=0.55 if p.sprinting else 0.28)
+                metal = self.s.plan.get("metal")                 # железный пол звучит иначе
+                snd = ("step_metal" if self.step_alt else "step_metal2") if metal else ("step" if self.step_alt else "step2")
+                self.audio.play(snd, vol=0.55 if p.sprinting else 0.28)
                 self.step_alt = not self.step_alt
                 self.step_t = 0.26 if p.sprinting else 0.42
         if d < 650 and m.state != "search":
@@ -2066,6 +2292,29 @@ class PickupSystem:
                     self.note.say("Завал. Нужна взрывчатка — динамит где-то на этом этаже", 3.0)
                     s.blast_warn = 3.0
                     s.emit("blast_seen")
+
+        for it in s.antidote:                              # аванпост: антидот доктора Вейры
+            if it["alive"] and math.hypot(it["x"] - p.x, it["y"] - p.y) < 26:
+                it["alive"] = False
+                s.has_antidote = True
+                self.audio.play("pickup")
+                self.note.say("АНТИДОТ! Единственный шанс вернуть Томасу человеческий облик", 4.0)
+                s.emit("antidote")
+        for it in s.serum:                                 # ампула сыворотки: предлагает выбор
+            if it["alive"] and not it.get("asked") and math.hypot(it["x"] - p.x, it["y"] - p.y) < 28:
+                it["asked"] = True
+                s.emit("serum_offer")
+        s.console_warn = max(0.0, s.console_warn - dt)
+        if s.console_cell is not None and s.evac_t is None and not s.evac_done:
+            cx_, cy_ = (s.console_cell[0] + 0.5) * TILE, (s.console_cell[1] + 0.5) * TILE
+            if math.hypot(cx_ - p.x, cy_ - p.y) < 38:
+                if p.keys >= 1:                            # ключ-карта оператора есть — вызов эвакуации
+                    s.evac_t = EVAC_TIME
+                    s.emit("evac_start")
+                elif s.console_warn <= 0:
+                    self.note.say("Консоль мертва. Нужна ключ-карта оператора (хотя бы один ключ)", 3.0)
+                    s.console_warn = 3.0
+                    s.emit("console_seen")
 
         # --- дверь лифта: плавно открывается, когда собраны все ключи
         was_open = s.exit_open
@@ -2657,6 +2906,38 @@ class SpriteRenderer:
             pygame.draw.circle(self.screen, (120, 200, 140), (int(x), int(y - h)), 4)
             pygame.draw.circle(self.screen, (220, 255, 230), (int(x - 1), int(y - h - 1)), 1)
 
+    def draw_outpost(self, camx, camy):
+        """Аванпост: консоль дальней связи, шприц с антидотом, ампула сыворотки."""
+        s, scr, t = self.s, self.screen, self.clock.t
+        if s.console_cell is not None:
+            x, y = (s.console_cell[0] + 0.5) * TILE - camx, (s.console_cell[1] + 0.5) * TILE - camy
+            if -60 < x < SW + 60 and -60 < y < SH + 60:
+                x, y = int(x), int(y)
+                pygame.draw.rect(scr, (14, 16, 18), (x - 24, y - 18, 48, 36))
+                pygame.draw.rect(scr, (60, 68, 76), (x - 22, y - 16, 44, 32))
+                pygame.draw.rect(scr, (16, 60, 52), (x - 16, y - 12, 32, 18))
+                for i in range(3):
+                    pygame.draw.line(scr, (80, 230, 170), (x - 13, y - 9 + i * 5), (x - 13 + 8 + int(9 * abs(math.sin(t * 3 + i))), y - 9 + i * 5), 2)
+                pygame.draw.line(scr, (120, 126, 134), (x + 16, y - 16), (x + 22, y - 32), 2)
+                lamp = (255, 60, 50) if s.evac_t is not None and int(t * 4) % 2 == 0 else (90, 30, 28)
+                pygame.draw.circle(scr, lamp, (x + 22, y - 33), 3)
+        for it in s.antidote:
+            if it["alive"]:
+                x, y = int(it["x"] - camx), int(it["y"] - camy + math.sin(t * 3 + it["ph"]) * 2)
+                if -40 < x < SW + 40 and -40 < y < SH + 40:
+                    pygame.draw.line(scr, (210, 220, 224), (x - 12, y + 6), (x + 10, y - 6), 7)
+                    pygame.draw.line(scr, (90, 220, 230), (x - 8, y + 4), (x + 4, y - 3), 4)
+                    pygame.draw.line(scr, (200, 204, 210), (x + 10, y - 6), (x + 18, y - 10), 2)
+                    pygame.draw.circle(scr, (240, 250, 255), (x - 14, y + 8), 4)
+        for it in s.serum:
+            if it["alive"]:
+                x, y = int(it["x"] - camx), int(it["y"] - camy + math.sin(t * 2.6 + it["ph"]) * 2)
+                if -40 < x < SW + 40 and -40 < y < SH + 40:
+                    pygame.draw.rect(scr, (10, 40, 18), (x - 7, y - 9, 14, 20), border_radius=5)
+                    pygame.draw.rect(scr, (60, 220, 90), (x - 6, y - 8, 12, 18), border_radius=5)
+                    pygame.draw.rect(scr, (40, 44, 40), (x - 3, y - 14, 6, 6))
+                    pygame.draw.circle(scr, (20, 70, 30), (x, y + 1), 3)
+
     def draw_secret(self, camx, camy):
         """Секретный этаж: динамит на полу и завал в тупике (туда нужно донести динамит)."""
         s, scr, t = self.s, self.screen, self.clock.t
@@ -2730,7 +3011,9 @@ class SpriteRenderer:
                              [(i, self.tex.glow_bat, 330) for i in self.s.bats if i["alive"]] + \
                              [(i, self.tex.glow_bat, 240) for i in self.s.botts if i["alive"]] + \
                              [(i, self.tex.glow_note, 300) for i in self.s.notes if i["alive"]] + \
-                             [(i, self.tex.glow_exit_r, 340) for i in self.s.dynamite if i["alive"]]:
+                             [(i, self.tex.glow_exit_r, 340) for i in self.s.dynamite if i["alive"]] + \
+                             [(i, self.tex.glow_note, 320) for i in self.s.antidote if i["alive"]] + \
+                             [(i, self.tex.glow_exit_g, 300) for i in self.s.serum if i["alive"]]:
             d = math.hypot(it["x"] - p.x, it["y"] - p.y)
             if d < lim and line_clear(self.s.grid, p.x, p.y, it["x"], it["y"]):
                 k = 0.6 + 0.4 * math.sin(self.clock.t * 4 + it["ph"])
@@ -2835,6 +3118,10 @@ class Hud:
         self.text.draw_text(self.text.f_small, FLOORS[self.s.floor]["name"], (170, 150, 120), (SW // 2, 34))
         tt = int(self.s.play_time)
         self.text.draw_text(self.text.f_small, "%02d:%02d" % (tt // 60, tt % 60), (150, 150, 140), (SW // 2, 14))
+        if self.s.evac_t is not None:                      # обратный отсчёт эвакуации
+            tl = max(0, int(self.s.evac_t))
+            ec = (255, 70, 60) if int(self.clock.t * 3) % 2 == 0 else (200, 40, 40)
+            self.text.draw_text(self.text.f_mid, "ЭВАКУАЦИЯ: %02d:%02d" % (tl // 60, tl % 60), ec, (SW // 2, 80))
         # миникарта (туман войны)
         if self.cfg.show_map:
             self.minimap.draw(SW - GW * MM - 12, 12)
@@ -2979,7 +3266,7 @@ class ScreenRenderer:
         self.win_t += self.clock.dt
         scr = self.screen
         title, col, lines = StoryBook.ENDINGS[self.s.ending]
-        scr.fill((4, 10, 8) if self.s.ending != "kill" else (8, 8, 12))
+        scr.fill({"kill": (8, 8, 12), "serum": (18, 4, 4), "evac": (4, 8, 20), "cure": (8, 18, 10), "blast": (20, 11, 4)}.get(self.s.ending, (4, 10, 8)))
         for i in range(9):          # лучи света из открытой двери
             a = -math.pi / 2 + (i - 4) * 0.18 + math.sin(self.clock.t * 0.5 + i) * 0.03
             c = 14 + (i % 3) * 4
@@ -3011,12 +3298,30 @@ class ScreenRenderer:
         elif self.scores.new_record:
             self.text.draw_text(self.text.f_small, "НОВЫЙ РЕКОРД! (%s)" % DIFFS[self.cfg.diff]["name"], (240, 220, 120), (SW // 2, 592))
         elif self.s.ending == "normal" and not self.s.all_notes_read:
-            self.text.draw_text(self.text.f_small, "Прочти все %d записок — и в финале появится выбор" % StoryBook.TOTAL_NOTES, (200, 170, 110), (SW // 2, 592))
+            self.text.draw_text(self.text.f_small, "Прочти все записки (%d) — и в финале появится выбор" % StoryBook.TOTAL_NOTES, (200, 170, 110), (SW // 2, 592))
         if int(self.clock.t * 1.6) % 2 == 0:
             self.text.draw_text(self.text.f_mid, "ENTER — сыграть снова", (210, 235, 215), (SW // 2, 634))
         self.text.draw_text(self.text.f_small, "ESC — главное меню", (100, 130, 110), (SW // 2, 678))
         self.screen.blit(self.tex.overlay, (0, 0))
         self.screen.blit(random.choice(self.tex.grain), (0, 0))
+
+    def begin_serum(self):
+        self.capture()
+
+    def draw_serum(self):
+        """Ампула сыворотки: выпить (новая концовка) или оставить."""
+        scr, tx = self.screen, self.text
+        scr.blit(self.snapshot, (0, 0))
+        self.fade_surf.set_alpha(195)
+        scr.blit(self.fade_surf, (0, 0))
+        tx.draw_text(tx.f_title, "АМПУЛА", (110, 230, 140), (SW // 2, 140))
+        for i, ln in enumerate(("Зелёная сыворотка «ГЛУБИНА». Записка сержанта: «Не пей. Я выпил — и теперь слышу всех».",
+                                "Она делает сильнее. И превращает в то, что бродит по этажам.")):
+            tx.draw_text(tx.f_small, ln, (200, 210, 196), (SW // 2, 230 + i * 30))
+        blink = 0.75 + 0.25 * math.sin(self.clock.t * 5)
+        tx.draw_text(tx.f_big, "[1]  ВЫПИТЬ — стать сильнее", (int(230 * blink), int(100 * blink), int(100 * blink)), (SW // 2, 360))
+        tx.draw_text(tx.f_big, "[2]  ОСТАВИТЬ", (int(170 * blink), int(240 * blink), int(180 * blink)), (SW // 2, 430))
+        scr.blit(self.tex.overlay, (0, 0))
 
     def begin_archive(self):
         self.capture()
@@ -3640,6 +3945,9 @@ class PlayView:
     def prepare(self):
         """Новый уровень: собирает его картинку из текстур."""
         self.world = self.painter.render(self.s.grid, GW, GH, 24)
+        tint = self.s.plan.get("tint")                     # каждый этаж чуть иного цвета: реактор — тёплый, аванпост — холодный
+        if tint:
+            self.world.fill(tint, special_flags=pygame.BLEND_RGB_MULT)
 
     def draw(self):
         p, m, scr = self.s.player, self.s.monster, self.screen
@@ -3659,6 +3967,7 @@ class PlayView:
         self.sprites.draw_pickups(camx, camy)
         self.sprites.draw_notes(camx, camy)
         self.sprites.draw_secret(camx, camy)
+        self.sprites.draw_outpost(camx, camy)
         self.sprites.draw_props(camx, camy)
         self.sprites.draw_thrown(camx, camy)
         self.sprites.draw_dust(camx, camy)
@@ -4308,7 +4617,12 @@ class BossFight:
         """Выбор в момент узнавания: пощадить или добить."""
         if self.phase != "recognition":
             return
-        self.s.ending = "spare" if spare else "kill"
+        if spare == "cure":                                  # антидот: Томас снова человек
+            if not self.s.has_antidote:
+                return
+            self.s.ending = "cure"
+        else:
+            self.s.ending = "spare" if spare else "kill"
         self.phase = "dying"
         if spare:
             self.audio.play("ding", vol=0.7)
@@ -4572,6 +4886,8 @@ class BossRenderer:
         blink = 0.75 + 0.25 * math.sin(self.clock.t * 5)
         tx.draw_text(tx.f_big, C["spare"], (int(150 * blink), int(240 * blink), int(160 * blink)), (SW // 2, 400))
         tx.draw_text(tx.f_big, C["kill"], (int(240 * blink), int(120 * blink), int(110 * blink)), (SW // 2, 470))
+        if self.s.has_antidote:
+            tx.draw_text(tx.f_big, "[3]  ВВЕСТИ АНТИДОТ — вернуть Томаса", (int(120 * blink), int(235 * blink), int(235 * blink)), (SW // 2, 540))
 
     def draw(self):
         b, scr = self.boss, self.screen
@@ -4620,7 +4936,11 @@ class MusicDirector:
     ритм-секция; в финале и бою — свои дорожки; победа и поражение — короткие темы.
     """
 
-    ONESHOT = ("mus_win", "mus_lose")      # играют один раз, без зацикливания
+    ONESHOT = ("mus_win", "mus_lose", "mus_win_dark", "mus_win_warm", "mus_win_blast")     # играют один раз
+    FLOOR_TRACK = {0: "mus_floor0", 1: "mus_floor1", 2: "mus_floor2", 3: "mus_floor3", 4: "mus_floor4", 5: "mus_outpost", 6: "mus_floor5"}
+    AMBIENCE = {0: "amb_lab", 1: "amb_lab", 2: "amb_lab", 3: "amb_shaft", 4: "amb_reactor", 5: "amb_outpost", 6: "amb_warehouse"}
+    WIN_TRACK = {"normal": "mus_win", "kill": "mus_win_dark", "serum": "mus_win_dark", "spare": "mus_win_warm", "cure": "mus_win_warm",
+                 "evac": "mus_win_warm", "blast": "mus_win_blast"}
     FADE = 0.7                             # скорость плавного изменения громкости (1/сек)
 
     def __init__(self, atmo, audio, boss, s):
@@ -4652,7 +4972,11 @@ class MusicDirector:
             t["mus_menu"] = 0.25
         elif state in ("play", "pause", "reading"):
             k = {"play": 1.0, "pause": 0.35, "reading": 0.5}[state]
-            t["mus_floor%d" % int(clamp(s.floor, 0, 2))] = 0.55 * k
+            evac = s.evac_t is not None
+            t[self.FLOOR_TRACK.get(s.floor, "mus_floor2")] = 0.55 * k * (0.35 if evac else 1.0)
+            t[self.AMBIENCE.get(s.floor, "amb_lab")] = 0.30 * k
+            if evac:
+                t["mus_evac"] = 0.8 * k
             t["mus_tension"] = (clamp((a.danger - 0.15) / 0.6, 0.0, 1.0) * 0.55 + (0.25 if s.alarm_t > 0 else 0.0)) * k
             if s.monster is not None and s.monster.state == "chase":
                 t["mus_chase"] = 0.7 * k
@@ -4663,7 +4987,7 @@ class MusicDirector:
             t["boss_music"] = 0.55
             t["mus_tension"] = 0.2 + (0.25 if self.boss.attack is not None else 0.0)
         elif state == "win":
-            t["mus_win"] = 0.7
+            t[self.WIN_TRACK.get(s.ending, "mus_win")] = 0.7
         elif state == "lose":
             t["mus_lose"] = 0.7
         return t                           # в состоянии caught — тишина (слои быстро затухают)
@@ -4724,6 +5048,16 @@ class RadioSystem:
                 self.say_key("notes_half")
             if s.all_notes_read:
                 self.say_key("all_notes")
+        elif ev == "evac_start":
+            self.say_key("evac_start")
+        elif ev == "evac_half":
+            self.say_key("evac_half")
+        elif ev == "antidote":
+            self.say_key("antidote_found")
+        elif ev == "serum_offer":
+            self.say_key("serum_seen")
+        elif ev == "console_seen":
+            self.say_key("console_hint")
         elif ev == "dynamite":
             self.say_key("dynamite_found")
         elif ev == "blast_seen":
@@ -4795,12 +5129,15 @@ class AchievementTracker:
 
     LIST = {
         "ghost": ("ТИХАЯ ТЕНЬ", "Пройди этаж, ни разу не попавшись монстру на глаза"),
-        "reader": ("НАЧИТАННЫЙ", "Прочти все 18 записок"),
+        "reader": ("НАЧИТАННЫЙ", "Прочти все 22 записки"),
         "parry": ("МАСТЕР ПАРИРОВАНИЯ", "Отбей 5 ударов босса за один бой"),
         "sniper": ("МЕТКИЙ ГЛАЗ", "Сделай 3 идеальных выстрела подряд"),
         "mercy": ("МИЛОСЕРДИЕ", "Пощади Томаса в финале"),
         "slip": ("УСКОЛЬЗНУЛ", "Вырвись из хватки монстра за 3 секунды"),
         "blaster": ("ПОДРЫВНИК", "Выберись на поверхность, взорвав завал на этаже -10"),
+        "evac": ("ЭВАКУИРОВАН", "Вызови вертолёт с аванпоста и продержись минуту"),
+        "serum": ("НОВАЯ ПЛОТЬ", "Выпей сыворотку на аванпосте"),
+        "cure": ("ВСЕ ЖИВЫ", "Верни Томасу человеческий облик антидотом"),
     }
 
     def __init__(self, audio, s):
@@ -4846,6 +5183,12 @@ class AchievementTracker:
             self.unlock("slip")
         elif ev == "blast_done":
             self.unlock("blaster")
+        elif ev == "evac_done":
+            self.unlock("evac")
+        elif ev == "serum_done":
+            self.unlock("serum")
+        elif ev == "boss_won" and self.s.ending == "cure":
+            self.unlock("cure")
         elif ev == "boss_won" and self.s.ending == "spare":
             self.unlock("mercy")
 
@@ -5298,6 +5641,11 @@ class CinematicSystem:
     """Короткие кат-сцены без управления (ответственность: таймлайн, звуки по времени, сигнал о завершении)."""
 
     SCENES = {
+        "evac": {"total": 8.0, "done": "evac_done",
+                 "cues": [(0.2, "rotor", 6, 0.55), (2.8, "static", 0, 0.5), (3.4, "door", 0, 0.7), (5.4, "ding", 0, 0.6)]},
+        "serum_end": {"total": 7.6, "done": "serum_done",
+                      "cues": [(0.2, "gulp", 0, 1.0), (1.0, "heart", 0, 0.9), (1.6, "transform", 0, 1.0), (3.6, "roar", 0, 0.9),
+                               (5.2, "whisper", 0, 0.6)]},
         "fall": {"total": 8.3, "done": "fall_done",
                  "cues": [(0.1, "alarm", 1, 0.5), (0.9, "bang", 0, 0.9), (1.25, "crunch", 0, 0.8), (1.5, "rumble", 0, 1.0),
                           (4.0, "rumble", 0, 1.0), (6.3, "crash", 0, 1.0), (6.35, "sub", 0, 1.0)]},
@@ -5343,6 +5691,7 @@ class CinematicSystem:
         if self.t >= self.total:
             self.done = True
             self.audio.stop("alarm")
+            self.audio.stop("rotor")
             self.s.emit(self.SCENES[self.name]["done"])
 
 
@@ -5350,6 +5699,9 @@ class CinematicRenderer:
     """Рисование кино (ответственность: кабина падающего лифта; подрыв завала с ослепительным светом поверхности)."""
 
     SUBS = {
+        "evac": [(0.3, 2.5, "Рокот винтов... Они услышали вызов!"), (3.0, 5.2, "Держись! Солдаты уже здесь!"), (5.6, 7.8, "Эвакуация...")],
+        "serum_end": [(0.3, 1.6, "Ты выпил ампулу до дна."), (1.8, 4.2, "Боль... нет. Ясность."),
+                      (4.4, 7.2, "Тьма больше не пугает. Тьма — это дом.")],
         "fall": [(0.3, 2.3, "Лифт дрожит. Что-то не так..."), (1.25, 3.6, "ТРОС ОБОРВАЛСЯ!"), (3.8, 6.2, "Всё быстрее... всё ниже..."),
                  (6.9, 8.2, "ЭТАЖ -10")],
         "blast": [(0.3, 2.2, "Динамит. Фитиль... Надеюсь, хватит."), (2.4, 4.1, "Прячься!"),
@@ -5478,6 +5830,67 @@ class CinematicRenderer:
             if u > 6.2:                                            # уход в слепящий свет
                 self.flash((255, 252, 235), 255 * clamp((u - 6.2) / 2.0, 0.0, 1.0))
 
+    def draw_evac(self, u):
+        """Вертолёт над люком: прожектор, тени вращающихся лопастей, вихрь пыли; солдаты бегут к герою."""
+        scr, t = self.screen, self.clock.t
+        C = (SW // 2, SH // 2)
+        scr.blit(self.room, (-10, -10))
+        k = clamp(u / 3.0, 0.0, 1.0)
+        self.flash((0, 0, 0), 150 - 95 * k)
+        for i in range(34):                                                # ветер от винта: пыль летит по кругу
+            a = i * 0.185 + t * (2.0 + 6.0 * k)
+            r = 120 + (i * 37) % 360
+            pygame.draw.circle(scr, (176, 170, 156), (int(C[0] + math.cos(a) * r), int(C[1] + math.sin(a) * r * 0.7)), 2 + i % 4)
+        spot = int(70 + 220 * k)
+        pygame.draw.circle(scr, (250, 246, 220), C, spot)
+        pygame.draw.circle(scr, (255, 255, 240), C, int(spot * 0.6))
+        for j in range(4):                                                  # тень лопастей
+            a = t * 22 + j * math.pi / 2
+            pygame.draw.line(scr, (34, 34, 38), C, (int(C[0] + math.cos(a) * 430 * k), int(C[1] + math.sin(a) * 430 * k)), int(10 + 14 * k))
+        hero = pygame.transform.rotozoom(self.tex.player_base, 20 * math.sin(t * 6), 1.6)
+        scr.blit(hero, hero.get_rect(center=(C[0] + int(math.sin(t * 9) * 3), C[1] + 10)))
+        if u > 3.2:                                                         # солдаты сбегаются со всех сторон
+            m = clamp((u - 3.2) / 2.2, 0.0, 1.0)
+            for i, (sx, sy) in enumerate(((60, 120), (SW - 60, 160), (80, SH - 130), (SW - 90, SH - 110))):
+                x, y = sx + (C[0] - sx) * 0.82 * m, sy + (C[1] - sy) * 0.82 * m
+                pygame.draw.ellipse(scr, (6, 6, 8), pygame.Rect(int(x - 18), int(y - 8), 40, 26))
+                pygame.draw.ellipse(scr, (54, 74, 54), pygame.Rect(int(x - 20), int(y - 12), 40, 26))
+                pygame.draw.circle(scr, (196, 168, 140), (int(x), int(y)), 8)
+                pygame.draw.circle(scr, (40, 54, 40), (int(x), int(y - 2)), 8)
+        if u > 6.2:
+            self.flash((255, 252, 235), 255 * clamp((u - 6.2) / 1.6, 0.0, 1.0))
+
+    def draw_serum_end(self, u):
+        """Превращение: вены ползут от краёв к центру, герой сменяется монстром, загораются красные глаза."""
+        scr, t = self.screen, self.clock.t
+        C = (SW // 2, SH // 2)
+        scr.blit(self.room, (-10, -10))
+        self.flash((0, 0, 0), 150)
+        g = clamp(u / 5.0, 0.0, 1.0)
+        k = clamp((u - 1.6) / 2.4, 0.0, 1.0)                                # 0 — человек, 1 — монстр
+        hero = pygame.transform.rotozoom(self.tex.player_base, math.sin(t * 22) * 12 * (1 - k), 2.4)
+        hero.set_alpha(int(clamp(255 * (1 - k), 0, 255)))
+        scr.blit(hero, hero.get_rect(center=C))
+        mon = pygame.transform.rotozoom(self.tex.monster_base, 0, 1.4 + 1.1 * k)
+        mon.set_alpha(int(clamp(255 * k, 0, 255)))
+        scr.blit(mon, mon.get_rect(center=C))
+        for i in range(26):                                                  # вены
+            a = i * 0.2417
+            x0, y0 = C[0] + math.cos(a) * 760, C[1] + math.sin(a) * 560
+            pts = [(x0 + (C[0] - x0) * (j / 7.0) * g + math.sin(i * 3 + j * 1.7 + t * 3) * 18 * (1 - j / 7.0),
+                    y0 + (C[1] - y0) * (j / 7.0) * g + math.cos(i * 2 + j * 1.3 + t * 3) * 18 * (1 - j / 7.0)) for j in range(8)]
+            pygame.draw.lines(scr, (130, 14, 24), False, pts, 3)
+            pygame.draw.lines(scr, (210, 60, 70), False, pts, 1)
+        if k > 0.55:                                                         # красные глаза
+            for sd in (-1, 1):
+                pygame.draw.circle(scr, (60, 0, 0), (C[0] + sd * 48, C[1] - 40), 26)
+                pygame.draw.circle(scr, (255, 40, 30), (C[0] + sd * 48, C[1] - 40), 15)
+        beat = 0.5 + 0.5 * math.sin(t * 9)                                   # пульс: красная виньетка
+        self.tex.red_vig.set_alpha(int(clamp((60 + 160 * g) * beat, 0, 255)))
+        scr.blit(self.tex.red_vig, (0, 0))
+        if u > 6.6:
+            self.flash((0, 0, 0), 255 * clamp((u - 6.6) / 1.0, 0.0, 1.0))
+
     def draw(self):
         c, scr = self.cin, self.screen
         u = c.t
@@ -5599,6 +6012,45 @@ class PounceRenderer:
             scr.blit(self.flash, (0, 0))
 
 
+# ------------------------------------------------------------------ ЭВАКУАЦИЯ
+class EvacSystem:
+    """Эвакуация (ответственность: обратный отсчёт после вызова с аванпоста, натравливание монстра, прибытие вертолёта)."""
+
+    def __init__(self, audio, note, s):
+        self.audio = audio
+        self.note = note
+        self.s = s
+        self.redirect_t = 0.0
+        self.half_said = False
+
+    def start(self):
+        self.redirect_t = 0.0
+        self.half_said = False
+        self.audio.play("console_on")
+        self.audio.play("alarm", 8, 0.3)
+        self.note.say("ВЫЗОВ ПОСЛАН! Продержись минуту — вертолёт уже в пути", 5.0)
+
+    def update(self, dt):
+        s = self.s
+        if s.evac_t is None:
+            return
+        s.evac_t -= dt
+        self.redirect_t -= dt
+        m, p = s.monster, s.player
+        if self.redirect_t <= 0 and m.state != "chase" and m.stun <= 0:      # сигнал привлекает монстра
+            self.redirect_t = 4.0
+            m.state = "investigate"
+            m.set_goal(s, int(p.x // TILE), int(p.y // TILE))
+        if s.evac_t <= 30 and not self.half_said:
+            self.half_said = True
+            s.emit("evac_half")
+        if s.evac_t <= 0:
+            s.evac_t = None
+            s.evac_done = True
+            self.audio.stop("alarm")
+            s.emit("evac_arrive")
+
+
 # ------------------------------------------------------------------ ВВОД
 class InputRouter:
     """Переводит события и опрос клавиатуры pygame в команды. Никакой игровой логики."""
@@ -5675,6 +6127,8 @@ class InputRouter:
                 return [("boss_choose", True)]
             if k == pygame.K_2:
                 return [("boss_choose", False)]
+            if k == pygame.K_3:
+                return [("boss_choose", "cure")]
             if k == pygame.K_q:
                 return [("boss_reload",)]
             if k == pygame.K_SPACE:
@@ -5690,6 +6144,11 @@ class InputRouter:
         elif state == "prologue":
             if enter or k == pygame.K_ESCAPE:
                 return [("skip_prologue",)]
+        elif state == "serum":
+            if k == pygame.K_1:
+                return [("serum_choose", 0)]
+            if k in (pygame.K_2, pygame.K_ESCAPE):
+                return [("serum_choose", 1)]
         elif state == "cinematic":
             if enter or k == pygame.K_ESCAPE:
                 return [("skip_cinematic",)]
@@ -5775,6 +6234,7 @@ class Game:
                                           screen=self.screen, sprites=self.sprites, tex=self.tex)
         self.cin = CinematicSystem(audio=self.audio, s=self.s)
         self.cin_view = CinematicRenderer(cin=self.cin, clock=self.clock, screen=self.screen, tex=self.tex, text=self.text)
+        self.evac = EvacSystem(audio=self.audio, note=self.note, s=self.s)
         self.fx = PostFX(atmo=self.atmo, cfg=self.cfg, clock=self.clock, s=self.s, screen=self.screen, tex=self.tex)
         self.hud = Hud(cfg=self.cfg, clock=self.clock, minimap=self.minimap, note=self.note, s=self.s, screen=self.screen, text=self.text)
         self.screens = ScreenRenderer(ach=self.ach, audio=self.audio, cfg=self.cfg, clock=self.clock, lighting=self.lighting, s=self.s, scores=self.scores, screen=self.screen, tex=self.tex, text=self.text)
@@ -5947,6 +6407,21 @@ class Game:
                     self.begin_floor_card(data, self.s.carry())
             elif ev == "fall_done":
                 self.begin_floor_card(*self.after_cin)
+            elif ev == "evac_start":                 # консоль аванпоста: вызов эвакуации, отсчёт 60 секунд
+                self.evac.start()
+            elif ev == "evac_arrive":
+                self.begin_cinematic("evac")
+            elif ev == "evac_done":                  # концовка: эвакуация вертолётом
+                self.s.ending = "evac"
+                self.s.finish_time = self.s.play_time
+                self.finish_finale()
+            elif ev == "serum_offer":                # ампула сыворотки: выбор
+                self.screens.begin_serum()
+                self.state = "serum"
+            elif ev == "serum_done":                 # концовка: герой стал чудовищем
+                self.s.ending = "serum"
+                self.s.finish_time = self.s.play_time
+                self.finish_finale()
             elif ev == "secret_blast":               # динамит у завала: подрыв
                 self.begin_cinematic("blast")
             elif ev == "blast_done":                 # новая концовка: выход через шахту
@@ -6032,6 +6507,13 @@ class Game:
                 self.state = "reading"
         elif name == "archive_close":
             self.state = "play"
+        elif name == "serum_choose":
+            if cmd[1] == 0:                          # выпил
+                self.begin_cinematic("serum_end")
+            else:                                    # оставил
+                for it in self.s.serum:
+                    it["alive"] = False
+                self.state = "play"
         elif name == "boss_choose":
             self.boss.resolve(cmd[1])
         elif name == "cheat_floor":
@@ -6107,6 +6589,7 @@ class Game:
             return
         self.atmo.update(dt)
         self.pickups.update(dt)
+        self.evac.update(dt)
         self.stealth.update(dt)
         self.minimap.update()
         self.note.tick(dt)
@@ -6130,6 +6613,8 @@ class Game:
             self.dispatch_events()
             if self.state == "pounce":
                 self.pounce_view.draw()
+        elif st == "serum":
+            self.screens.draw_serum()
         elif st == "cinematic":
             self.cin.update(dt)
             self.dispatch_events()
