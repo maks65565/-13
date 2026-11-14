@@ -841,7 +841,7 @@ class SoundBank:
             sp = (t + 0.5) % 1.0
             snare = random.uniform(-1, 1) * math.exp(-sp * 14) * 0.35
             hp = t % 0.25
-            hat = random.uniform(-1, 1) * math.exp(-hp * 60) * 0.16
+            hat = random.uniform(-1, 1) * math.exp(-hp * 60) * 0.16 * min(1.0, hp * 500)     # короткая атака: без щелчка на стыке петли
             bp = t % 0.25
             bs = math.sin(tau * bass[int(t / 0.25) % 8] * bp) * math.exp(-bp * 8) * 0.40
             st = t % 2.0
@@ -922,7 +922,7 @@ class SoundBank:
             sp = (t + 0.5) % 1.0
             bp = t % 0.25
             return (math.sin(tau * (45 + 120 * math.exp(-kp * 35)) * kp) * math.exp(-kp * 9) * 0.6
-                    + random.uniform(-1, 1) * math.exp(-hp * 55) * 0.14 + random.uniform(-1, 1) * math.exp(-sp * 13) * 0.3
+                    + random.uniform(-1, 1) * math.exp(-hp * 55) * 0.14 * min(1.0, hp * 500) + random.uniform(-1, 1) * math.exp(-sp * 13) * 0.3 * min(1.0, sp * 500)
                     + math.sin(tau * bass_ev[int(t) % 4] * bp) * math.exp(-bp * 6) * 0.38
                     + 0.10 * math.sin(tau * 520 * t + 140 * math.sin(tau * 0.5 * t)))
 
