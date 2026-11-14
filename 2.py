@@ -24,7 +24,8 @@
     F8 / F9 / F10   — ЧИТЫ: F8 — следующий этаж, F9 — все ключи + заряд + телепорт к двери, F10 — сразу финал
     TAB             — архив прочитанных записок
     ВНИЗ НА -10     — на этаже -3 лифт срывается и падает в шахту: найди динамит и взорви завал (секретная концовка)
-    АВАНПОСТ -6     — консоль дальней связи (вызови вертолёт и продержись минуту), антидот и ампула сыворотки:
+    АВАНПОСТ -6     — полноценный этаж (казарма, пост связи, арсенал, столовая, лаборатория, лазарет), у лифта сцена с солдатами и Леной;
+                      консоль дальней связи (вызови вертолёт и продержись минуту), антидот и ампула сыворотки:
                       три новые концовки (эвакуация, «Новая плоть», «Все живы» — антидот в финальном выборе, клавиша 3)
     ПРОБЕЛ x10      — когда монстр схватил: 10 нажатий за 3 секунды, чтобы вырваться (иначе — скример)
     P или ESC       — пауза
@@ -107,7 +108,7 @@ FLOORS = [   # маршрут: -3 -> (лифт падает) -> -10 -> -8 -> -6 
      "secret": True, "notes": 0},
     {"name": "ЭТАЖ -8", "title": "РЕАКТОРНАЯ", "keys": 3, "mspeed": 1.08, "broken": 0.80, "bats_d": 1, "next": 5, "notes": 0,
      "tint": (255, 205, 170), "metal": True},
-    {"name": "ЭТАЖ -6", "title": "АВАНПОСТ «СЕНТИНЕЛ»", "keys": 2, "mspeed": 0.90, "broken": 0.30, "bats_d": 3, "next": 6, "notes": 4,
+    {"name": "ЭТАЖ -6", "title": "АВАНПОСТ «СЕНТИНЕЛ»", "keys": 2, "mspeed": 0.90, "broken": 0.30, "bats_d": 3, "next": 6, "notes": 6,
      "outpost": True, "tint": (205, 218, 238), "metal": True},
     {"name": "ЭТАЖ -4", "title": "СКЛАДЫ", "keys": 3, "mspeed": 1.10, "broken": 0.60, "bats_d": 0, "next": 1, "notes": 0,
      "tint": (208, 228, 198)},
@@ -678,6 +679,171 @@ def make_tiled_room(tex):
         for tx_ in range(0, SW + TILE, TILE):
             room.blit(random.choice(tex.floor_tiles), (tx_, ty))
     return room
+
+
+OUTPOST_ROOMS = (("КАЗАРМА", 4, 4, 12, 10), ("ПОСТ СВЯЗИ", 14, 4, 24, 10), ("АРСЕНАЛ", 26, 4, 34, 10),
+                 ("СТОЛОВАЯ", 4, 16, 12, 22), ("ЛАБОРАТОРИЯ", 14, 16, 24, 22), ("ЛАЗАРЕТ", 26, 16, 34, 22))
+
+
+def generate_outpost():
+    """
+    Аванпост «Сентинел» (не лабиринт, а спроектированный этаж): кольцевой коридор по периметру, главный зал
+    через весь этаж и шесть комнат (казарма, пост связи, арсенал, столовая, лаборатория, лазарет) с двумя-тремя
+    дверями каждая — есть где прятаться и где убегать по кругу. Внутри комнат — одиночные ящики-укрытия.
+    """
+    grid = [[1] * GW for _ in range(GH)]
+
+    def carve(x0, y0, x1, y1):
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1):
+                grid[y][x] = 0
+
+    carve(1, 1, GW - 2, 2)
+    carve(1, GH - 3, GW - 2, GH - 2)
+    carve(1, 1, 2, GH - 2)
+    carve(GW - 3, 1, GW - 2, GH - 2)
+    carve(1, 12, GW - 2, 14)
+    rooms = []
+    for name, x0, y0, x1, y1 in OUTPOST_ROOMS:
+        carve(x0, y0, x1, y1)
+        mx, my = (x0 + x1) // 2, (y0 + y1) // 2
+        top = y0 < 12
+        grid[11 if top else 15][mx] = 0                       # дверь в главный зал
+        grid[3 if top else 23][mx] = 0                        # дверь в кольцевой коридор
+        rooms.append({"name": name, "x0": x0, "y0": y0, "x1": x1, "y1": y1, "mid": (mx, my)})
+    for y in (7, 19):                                         # двери между комнатами и в боковые коридоры
+        for x in (3, 13, 25, 35):
+            grid[y][x] = 0
+    for r in rooms:                                           # ящики-укрытия: одиночные, не на проходах — проходимость не страдает
+        cand = [(x, y) for y in range(r["y0"] + 1, r["y1"]) for x in range(r["x0"] + 1, r["x1"])
+                if x != r["mid"][0] and y != r["mid"][1]]
+        random.shuffle(cand)
+        placed = 0
+        for (x, y) in cand:
+            if placed >= 4:
+                break
+            if any(grid[y + dy][x + dx] == 1 for dx, dy in DIRS + ((1, 1), (-1, -1), (1, -1), (-1, 1))):
+                continue
+            grid[y][x] = 1
+            placed += 1
+    return grid, rooms
+
+
+def paint_outpost(world, rooms, font):
+    """Обстановка аванпоста поверх пола: койки, столы, стеллажи, лазаретные кровати, разметка и подписи комнат."""
+    T = TILE
+    tints = {"КАЗАРМА": (60, 80, 50), "ПОСТ СВЯЗИ": (40, 70, 90), "АРСЕНАЛ": (90, 70, 40),
+             "СТОЛОВАЯ": (80, 70, 60), "ЛАБОРАТОРИЯ": (50, 90, 80), "ЛАЗАРЕТ": (100, 50, 50)}
+
+    def bed(x, y, blanket):
+        pygame.draw.rect(world, (24, 26, 24), (x - 2, y - 2, 52, 30))
+        pygame.draw.rect(world, blanket, (x, y, 48, 26))
+        pygame.draw.rect(world, (204, 204, 194), (x + 2, y + 3, 11, 20))
+
+    for r in rooms:
+        x0, y0 = r["x0"] * T, r["y0"] * T
+        w, h = (r["x1"] - r["x0"] + 1) * T, (r["y1"] - r["y0"] + 1) * T
+        ov = pygame.Surface((w, h), pygame.SRCALPHA)
+        ov.fill(tints[r["name"]] + (46,))
+        world.blit(ov, (x0, y0))
+        n = r["name"]
+        if n == "КАЗАРМА":
+            for i in range(4):
+                bed(x0 + 30 + i * 110, y0 + 14, (70, 86, 60))
+                bed(x0 + 30 + i * 110, y0 + h - 44, (70, 86, 60))
+        elif n == "ПОСТ СВЯЗИ":
+            pygame.draw.rect(world, (24, 20, 16), (x0 + 26, y0 + 10, w - 52, 30))
+            pygame.draw.rect(world, (84, 70, 52), (x0 + 28, y0 + 12, w - 56, 26))
+            for i in range(5):
+                pygame.draw.rect(world, (12, 50, 44), (x0 + 44 + i * 96, y0 + 14, 34, 18))
+                pygame.draw.line(world, (80, 230, 170), (x0 + 48 + i * 96, y0 + 20), (x0 + 70 + i * 96, y0 + 20), 2)
+            pygame.draw.line(world, (120, 126, 134), (x0 + w - 30, y0 + 12), (x0 + w - 30, y0 - 14), 3)
+        elif n == "АРСЕНАЛ":
+            for i in range(5):
+                pygame.draw.rect(world, (28, 30, 34), (x0 + 22 + i * 56, y0 + 8, 46, 20))
+                for j in range(3):
+                    pygame.draw.line(world, (90, 94, 100), (x0 + 28 + i * 56 + j * 14, y0 + 10), (x0 + 28 + i * 56 + j * 14, y0 + 26), 3)
+            for i in range(3):
+                pygame.draw.rect(world, (60, 46, 26), (x0 + 24 + i * 64, y0 + h - 38, 52, 28))
+                pygame.draw.rect(world, (120, 94, 52), (x0 + 26 + i * 64, y0 + h - 36, 48, 24))
+        elif n == "СТОЛОВАЯ":
+            for j in range(2):
+                pygame.draw.rect(world, (30, 24, 18), (x0 + 40, y0 + 52 + j * 150, w - 80, 34))
+                pygame.draw.rect(world, (112, 92, 66), (x0 + 42, y0 + 54 + j * 150, w - 84, 30))
+                for i in range(6):
+                    pygame.draw.rect(world, (60, 50, 38), (x0 + 50 + i * 60, y0 + 90 + j * 150, 40, 8))
+        elif n == "ЛАБОРАТОРИЯ":
+            for i in range(5):
+                pygame.draw.rect(world, (30, 36, 38), (x0 + 22 + i * 56, y0 + 8, 46, 26))
+                pygame.draw.rect(world, (150, 176, 180), (x0 + 24 + i * 56, y0 + 10, 42, 22))
+                pygame.draw.rect(world, (60, 200, 170), (x0 + 30 + i * 56, y0 + 14, 30, 6))
+            pygame.draw.rect(world, (30, 36, 38), (x0 + w - 84, y0 + h - 60, 64, 44))
+            pygame.draw.rect(world, (90, 200, 220), (x0 + w - 80, y0 + h - 56, 56, 36))
+        elif n == "ЛАЗАРЕТ":
+            for i in range(3):
+                bed(x0 + 34 + i * 120, y0 + 14, (200, 204, 210))
+            pygame.draw.rect(world, (170, 30, 34), (x0 + w // 2 - 6, y0 + h - 74, 12, 40))
+            pygame.draw.rect(world, (170, 30, 34), (x0 + w // 2 - 20, y0 + h - 60, 40, 12))
+        lab = font.render(n, True, (150, 162, 150))
+        world.blit(lab, (x0 + 8, y0 + h - 22))
+    for x in range(2 * T, (GW - 2) * T, 64):                  # разметка главного зала: жёлтый пунктир
+        pygame.draw.rect(world, (190, 168, 40), (x, 13 * T + T // 2 - 2, 34, 4))
+
+
+def draw_figure(scr, x, y, coat, size=1.0, hair=(40, 30, 24), skin=(196, 168, 140)):
+    """Человек сверху: плечи, голова, волосы или шлем."""
+    box = pygame.Rect(int(x - 20 * size), int(y - 13 * size), int(40 * size), int(26 * size))
+    pygame.draw.ellipse(scr, (6, 6, 8), box.move(3, 4))
+    pygame.draw.ellipse(scr, coat, box)
+    pygame.draw.ellipse(scr, shade(coat, -40), box, 2)
+    pygame.draw.circle(scr, skin, (int(x), int(y)), int(9 * size))
+    pygame.draw.circle(scr, hair, (int(x - 2 * size), int(y)), int(8 * size))
+
+
+def side_person(scr, x, gy, face, coat, pants, sc=1.0, hair=(40, 30, 24), helmet=None, walk=0.0, aim=None, hands_up=0.0,
+                ponytail=False, rifle=False, lean=0.0):
+    """
+    Человек сбоку (для кат-сцен). face: +1 смотрит вправо, -1 влево. walk — фаза шага. rifle — автомат в руках,
+    aim 0..1: от «опущен» до «вскинут и нацелен». hands_up 0..1 — руки вперёд/вверх. lean — наклон корпуса.
+    """
+    skin = (196, 168, 140)
+    f = face
+    hip = (x + lean * 4, gy - 64 * sc)
+    sw = math.sin(walk) * 20 * sc
+    for sd, col in ((-1, shade(pants, -25)), (1, pants)):                      # ноги
+        foot = (x + f * sw * sd, gy - 4 * sc)
+        pygame.draw.line(scr, col, (int(hip[0]), int(hip[1])), (int(foot[0]), int(foot[1])), max(2, int(13 * sc)))
+        pygame.draw.rect(scr, (20, 20, 22), (int(foot[0] - 7 * sc + f * 4 * sc), int(gy - 9 * sc), int(18 * sc), int(9 * sc)), border_radius=3)
+    top = gy - 120 * sc
+    pygame.draw.rect(scr, shade(coat, -40), (int(x - 17 * sc + lean * 8), int(top - 2 * sc), int(34 * sc), int(64 * sc)), border_radius=8)
+    pygame.draw.rect(scr, coat, (int(x - 15 * sc + lean * 8), int(top), int(30 * sc), int(60 * sc)), border_radius=7)
+    hx, hy = x + f * 3 * sc + lean * 10, gy - 138 * sc                         # голова
+    if ponytail:
+        pygame.draw.line(scr, hair, (int(hx - f * 10 * sc), int(hy)), (int(hx - f * 20 * sc), int(hy + 24 * sc + math.sin(walk * 2) * 4)), max(2, int(7 * sc)))
+    pygame.draw.circle(scr, helmet if helmet else hair, (int(hx - f * 2 * sc), int(hy - 3 * sc)), max(3, int(15 * sc)))
+    pygame.draw.circle(scr, skin, (int(hx + f * 5 * sc), int(hy + 4 * sc)), max(3, int(10 * sc)))
+    pygame.draw.circle(scr, (20, 20, 24), (int(hx + f * 9 * sc), int(hy + 2 * sc)), 2)
+    shoulder = (x + f * 2 * sc + lean * 8, top + 12 * sc)
+    sleeve = shade(coat, -20)
+    if rifle:                                                                   # автомат: низкая стойка -> прицеливание
+        a = (1.0 - (aim or 0.0)) * 0.95
+        d = (f * math.cos(a), math.sin(a))
+        butt = (shoulder[0] - d[0] * 14 * sc, shoulder[1] - d[1] * 14 * sc + 6 * sc)
+        tip = (butt[0] + d[0] * 96 * sc, butt[1] + d[1] * 96 * sc)
+        pygame.draw.line(scr, (14, 14, 16), butt, tip, max(3, int(9 * sc)))
+        pygame.draw.line(scr, (44, 44, 50), butt, tip, max(2, int(6 * sc)))
+        m0 = (butt[0] + d[0] * 46 * sc, butt[1] + d[1] * 46 * sc)
+        pygame.draw.line(scr, (22, 22, 26), m0, (m0[0] + f * 5 * sc, m0[1] + 20 * sc), max(2, int(7 * sc)))
+        h1 = (butt[0] + d[0] * 22 * sc, butt[1] + d[1] * 22 * sc)
+        h2 = (butt[0] + d[0] * 62 * sc, butt[1] + d[1] * 62 * sc)
+        for hnd in (h1, h2):
+            pygame.draw.line(scr, sleeve, shoulder, hnd, max(2, int(9 * sc)))
+            pygame.draw.circle(scr, skin, (int(hnd[0]), int(hnd[1])), max(2, int(5 * sc)))
+    else:
+        hu = hands_up
+        hand = (x + f * (8 + 34 * hu) * sc, top + (56 - 66 * hu) * sc + math.sin(walk) * 6 * sc * (1 - hu))
+        pygame.draw.line(scr, sleeve, shoulder, hand, max(2, int(10 * sc)))
+        pygame.draw.circle(scr, skin, (int(hand[0]), int(hand[1])), max(2, int(5 * sc)))
 
 
 def make_maw_texture():
@@ -1369,14 +1535,14 @@ class StoryBook:
         ("Реакторная: стены дрожат, а воздух пахнет озоном.",
          "Здесь питание всего комплекса. Ржавые трубы шипят паром — и шипят громче шагов.",
          "Монстр плохо слышит в этом шуме. Но и ты не услышишь его."),
-        ("Аванпост «Сентинел»: военный пост связи, давно покинутый.",
-         "Здесь рация дальней связи, запас батарей и холодильник с образцами доктора Вейры.",
+        ("Аванпост «Сентинел»: казарма, арсенал, лаборатория и лазарет под одной крышей.",
+         "Солдаты держат периметр, Лена сидит у рации в посте связи, а в холодильниках — образцы доктора Вейры.",
          "Отсюда можно вызвать помощь — если продержаться минуту. Или сделать выбор посерьёзнее."),
         ("Склады: лабиринт ящиков, бочек и стеллажей.",
          "Сквозняк разносит звук шагов по всему этажу.",
          "Один лифт отделяет тебя от этажей, где всё началось."),
     ]
-    TOTAL_NOTES = 22
+    TOTAL_NOTES = 24
     NOTES = {
         0: [("ЖУРНАЛ ИССЛЕДОВАТЕЛЯ, день 41",
              "Проект «ГЛУБИНА» задумывался как лекарство от старения. Сыворотку получили из грибницы под шахтой. "
@@ -1442,7 +1608,13 @@ class StoryBook:
              "Рядом — ампула сыворотки. НЕ ТРОГАТЬ."),
             ("ПОСЛЕДНЯЯ ЗАПИСЬ СЕРЖАНТА",
              "Я выпил сыворотку. Хотел стать сильным, чтобы выжить. Теперь я слышу всех на этажах — и они слышат меня. "
-             "Не повторяй моей ошибки.")],
+             "Не повторяй моей ошибки."),
+            ("ЖУРНАЛ ДЕЖУРНОГО",
+             "Три недели ни одного сигнала с нижних этажей. Только скрежет в вентиляции и, по ночам, голос, который зовёт по именам. "
+             "Сержант перестал спать."),
+            ("ПРИКАЗ №7 ОТ КЕССЛЕРА",
+             "Аванпост не покидать. Лифты глушить. Если кто-то поднимется снизу — считать заражённым. Огонь на поражение. "
+             "Вопросы не обсуждаются.")],
     }
     RADIO = {      # реплики по рации; каждая группа звучит один раз за прохождение
         "floor_start_0": [("ЛЕНА", "Эй... ты слышишь? Я Лена, поймала сигнал вашего бункера. Найди ключи от лифта — я на связи.")],
@@ -1470,7 +1642,7 @@ class StoryBook:
         "note_2_4": [("ЛЕНА", "Они вывезли сыворотку наверх... Значит, Кесслер уже на поверхности. И он знает про тебя.")],
         "note_2_5": [("ЛЕНА", "Ты слышишь его через рацию — поэтому в эфире этот шёпот. Он зовёт нас обоих.")],
         "floor_start_4": [("ЛЕНА", "Реакторная... Осторожнее: трубы шипят паром, а в шуме ты не услышишь шаги. Держись подальше от горячих секций.")],
-        "floor_start_5": [("ЛЕНА", "Аванпост «Сентинел»! Там рация дальней связи. Возьми хоть один ключ и нажми вызов — за тобой пришлют вертолёт.")],
+        "floor_start_5": [("ЛЕНА", "Я в посте связи, у рации. Возьми хоть один ключ-карту и нажми вызов на консоли — за нами пришлют вертолёт.")],
         "floor_start_6": [("ЛЕНА", "Склады. Тихо: сквозняк разносит шаги по всему этажу. Скоро ты будешь на этаже, с которого всё началось.")],
         "evac_start": [("ЛЕНА", "Вызов принят! Вертолёт будет через минуту! Продержись, Марк! Монстр слышит сигнал — он идёт к тебе!")],
         "evac_half": [("ЛЕНА", "Тридцать секунд! Они уже над лесом! Не дай себя поймать, Марк!")],
@@ -1566,7 +1738,7 @@ class LevelBuilder:
         return {"x": (c[0] + 0.5) * TILE, "y": (c[1] + 0.5) * TILE, "alive": True, "ph": random.uniform(0, 6.28)}
 
     def build(self):
-        grid = generate_maze()
+        grid, rooms = generate_outpost() if self.plan.get("outpost") else (generate_maze(), [])
         floors = [(x, y) for y in range(GH) for x in range(GW) if grid[y][x] == 0]
         dist = bfs_map(grid, 1, 1)
         maxd = max(dist[y][x] for x, y in floors)
@@ -1655,20 +1827,23 @@ class LevelBuilder:
             dc = [c for c in floors if dist[c[1]][c[0]] >= 14 and c not in taken and c != blast_cell
                   and far_enough(c, [blast_cell, exit_cell], 10)] or [random.choice(floors)]
             dyn = [self.item(random.choice(dc))]
-        extras = {"console": None, "antidote": [], "serum": []}
-        if self.plan.get("outpost"):                       # аванпост: консоль дальней связи, антидот и ампула сыворотки
-            used2 = set(keys) | {exit_cell, (1, 1)}
-            far2 = [c for c in floors if dist[c[1]][c[0]] >= 9 and c not in used2]
-            random.shuffle(far2)
-            picks = []
-            for c in far2:
-                if far_enough(c, picks, 9):
-                    picks.append(c)
-                if len(picks) == 3:
-                    break
-            while len(picks) < 3:
-                picks.append(random.choice(floors))
-            extras = {"console": picks[0], "antidote": [self.item(picks[1])], "serum": [self.item(picks[2])]}
+        extras = {"console": None, "antidote": [], "serum": [], "npcs": [], "rooms": rooms}
+        if self.plan.get("outpost"):                       # аванпост: консоль в посте связи, антидот в лазарете, сыворотка в лаборатории
+            R = {r["name"]: r for r in rooms}
+
+            def room_cell(r, dx, dy):
+                tx_, ty_ = r["mid"][0] + dx, r["mid"][1] + dy
+                return min((c for c in floors if r["x0"] <= c[0] <= r["x1"] and r["y0"] <= c[1] <= r["y1"]),
+                           key=lambda c: (c[0] - tx_) ** 2 + (c[1] - ty_) ** 2)
+
+            console = room_cell(R["ПОСТ СВЯЗИ"], 0, -2)
+            lena = room_cell(R["ПОСТ СВЯЗИ"], -3, -1)
+            ant = room_cell(R["ЛАЗАРЕТ"], 3, 2)
+            ser = room_cell(R["ЛАБОРАТОРИЯ"], -3, 2)
+            npcs = [{"kind": "lena", "x": (lena[0] + 0.5) * TILE, "y": (lena[1] + 0.5) * TILE, "ang": 0.3}]
+            for tx_, ty_, ang in ((4, 1, math.pi), (8, 1, 0.0), (33, 24, math.pi), (19, 12, math.pi / 2)):       # караулы
+                npcs.append({"kind": "soldier", "x": (tx_ + 0.5) * TILE, "y": (ty_ + 0.5) * TILE, "ang": ang})
+            extras = {"console": console, "antidote": [self.item(ant)], "serum": [self.item(ser)], "npcs": npcs, "rooms": rooms}
         return Level(grid, floors, exit_cell, [self.item(c) for c in keys], [self.item(c) for c in bats],
                      botts, lockers, lamps, monster_cell, notes, dyn, blast_cell, extras)
 
@@ -1692,6 +1867,9 @@ class Session:
         self.console_cell = None
         self.antidote = []
         self.serum = []
+        self.npcs = []
+        self.rooms = []
+        self.cin_name = ""
         self.floor = 0
         self.player = None
         self.monster = None
@@ -1762,6 +1940,7 @@ class Session:
         self.keys, self.bats, self.botts, self.notes = level.keys, level.bats, level.botts, level.notes
         self.dynamite, self.blast_cell = level.dynamite, level.blast_cell
         self.console_cell, self.antidote, self.serum = level.extras["console"], level.extras["antidote"], level.extras["serum"]
+        self.npcs, self.rooms = level.extras["npcs"], level.extras["rooms"]
         self.lockers, self.lamps = level.lockers, level.lamps
         self.reset_flags()
         self.events = []
@@ -2909,6 +3088,16 @@ class SpriteRenderer:
     def draw_outpost(self, camx, camy):
         """Аванпост: консоль дальней связи, шприц с антидотом, ампула сыворотки."""
         s, scr, t = self.s, self.screen, self.clock.t
+        for n in s.npcs:                                   # аванпост: солдаты на постах и Лена у рации
+            x, y = n["x"] - camx, n["y"] - camy + math.sin(t * 1.4 + n["x"]) * 1.2
+            if -50 < x < SW + 50 and -50 < y < SH + 50:
+                if n["kind"] == "lena":
+                    draw_figure(scr, x, y, (190, 130, 70), 1.0, hair=(96, 60, 36))
+                    pygame.draw.circle(scr, (96, 60, 36), (int(x - 10), int(y + 4)), 4)
+                else:
+                    draw_figure(scr, x, y, (70, 86, 60), 1.0, hair=(54, 66, 46))
+                    pygame.draw.line(scr, (14, 14, 16), (int(x), int(y + 8)),
+                                     (int(x + math.cos(n["ang"]) * 30), int(y + 8 + math.sin(n["ang"]) * 30)), 5)
         if s.console_cell is not None:
             x, y = (s.console_cell[0] + 0.5) * TILE - camx, (s.console_cell[1] + 0.5) * TILE - camy
             if -60 < x < SW + 60 and -60 < y < SH + 60:
@@ -3945,6 +4134,8 @@ class PlayView:
     def prepare(self):
         """Новый уровень: собирает его картинку из текстур."""
         self.world = self.painter.render(self.s.grid, GW, GH, 24)
+        if self.s.rooms:                                    # аванпост: комнаты с обстановкой и подписями
+            paint_outpost(self.world, self.s.rooms, self.hud.text.f_small)
         tint = self.s.plan.get("tint")                     # каждый этаж чуть иного цвета: реактор — тёплый, аванпост — холодный
         if tint:
             self.world.fill(tint, special_flags=pygame.BLEND_RGB_MULT)
@@ -4965,6 +5156,10 @@ class MusicDirector:
         elif state == "pounce":
             t["mus_chase"] = 0.9
             t["mus_tension"] = 0.8
+        elif state == "cinematic" and s.cin_name == "outpost":      # прибытие на аванпост: напряжённая тема поста
+            t["mus_outpost"] = 0.65
+            t["amb_outpost"] = 0.25
+            t["mus_tension"] = 0.2
         elif state == "cinematic":
             t["mus_finale"] = 0.55
             t["mus_tension"] = 0.45
@@ -5129,7 +5324,7 @@ class AchievementTracker:
 
     LIST = {
         "ghost": ("ТИХАЯ ТЕНЬ", "Пройди этаж, ни разу не попавшись монстру на глаза"),
-        "reader": ("НАЧИТАННЫЙ", "Прочти все 22 записки"),
+        "reader": ("НАЧИТАННЫЙ", "Прочти все 24 записки"),
         "parry": ("МАСТЕР ПАРИРОВАНИЯ", "Отбей 5 ударов босса за один бой"),
         "sniper": ("МЕТКИЙ ГЛАЗ", "Сделай 3 идеальных выстрела подряд"),
         "mercy": ("МИЛОСЕРДИЕ", "Пощади Томаса в финале"),
@@ -5446,12 +5641,7 @@ class PrologueRenderer:
 
     def figure(self, x, y, coat, size=1.0):
         """Человек сверху: плечи, голова, волосы."""
-        scr = self.screen
-        pygame.draw.ellipse(scr, (6, 6, 8), pygame.Rect(int(x - 20 * size + 3), int(y - 13 * size + 4), int(40 * size), int(26 * size)))
-        pygame.draw.ellipse(scr, coat, pygame.Rect(int(x - 20 * size), int(y - 13 * size), int(40 * size), int(26 * size)))
-        pygame.draw.ellipse(scr, shade(coat, -40), pygame.Rect(int(x - 20 * size), int(y - 13 * size), int(40 * size), int(26 * size)), 2)
-        pygame.draw.circle(scr, (196, 168, 140), (int(x), int(y)), int(9 * size))
-        pygame.draw.circle(scr, (40, 30, 24), (int(x - 2 * size), int(y)), int(8 * size))
+        draw_figure(self.screen, x, y, coat, size)
 
     def tank(self, cx, cy, u, cracks=0.0, broken=False, grow=1.0):
         """Стеклянный резервуар с образцом №13 (светящееся зелёное существо)."""
@@ -5641,6 +5831,11 @@ class CinematicSystem:
     """Короткие кат-сцены без управления (ответственность: таймлайн, звуки по времени, сигнал о завершении)."""
 
     SCENES = {
+        "outpost": {"total": 16.0, "done": "outpost_done",
+                    "cues": [(2.2, "rumble", 0, 0.7), (3.0, "ding", 0, 0.9), (3.45, "click", 0, 0.9), (3.6, "click", 0, 0.8),
+                             (4.7, "door", 0, 0.9), (8.9, "click", 0, 0.7), (9.1, "click", 0, 0.6)]
+                    + [(7.2 + 0.25 * i, "step_metal" if i % 2 else "step_metal2", 0, 0.45) for i in range(6)]
+                    + [(12.0 + 0.45 * i, "step_metal" if i % 2 else "step_metal2", 0, 0.35) for i in range(7)]},
         "evac": {"total": 8.0, "done": "evac_done",
                  "cues": [(0.2, "rotor", 6, 0.55), (2.8, "static", 0, 0.5), (3.4, "door", 0, 0.7), (5.4, "ding", 0, 0.6)]},
         "serum_end": {"total": 7.6, "done": "serum_done",
@@ -5699,6 +5894,10 @@ class CinematicRenderer:
     """Рисование кино (ответственность: кабина падающего лифта; подрыв завала с ослепительным светом поверхности)."""
 
     SUBS = {
+        "outpost": [(0.5, 2.7, "Аванпост «Сентинел». Три недели без связи с поверхностью."), (3.1, 4.4, "— Слышишь?.. Лифт!"),
+                    (4.4, 5.9, "— Он же мёртвый... Оружие на изготовку!"), (6.0, 7.5, "— Руки! Не двигаться!"),
+                    (7.6, 9.0, "— НЕ СТРЕЛЯЙТЕ! Это Марк!"), (9.0, 10.5, "— ...Свои. Опустить оружие."),
+                    (10.6, 12.3, "— Марк... Ты жив. Слава богу."), (12.5, 15.0, "— Идём. Тебе нужно отдохнуть... и многое рассказать.")],
         "evac": [(0.3, 2.5, "Рокот винтов... Они услышали вызов!"), (3.0, 5.2, "Держись! Солдаты уже здесь!"), (5.6, 7.8, "Эвакуация...")],
         "serum_end": [(0.3, 1.6, "Ты выпил ампулу до дна."), (1.8, 4.2, "Боль... нет. Ясность."),
                       (4.4, 7.2, "Тьма больше не пугает. Тьма — это дом.")],
@@ -5890,6 +6089,85 @@ class CinematicRenderer:
         scr.blit(self.tex.red_vig, (0, 0))
         if u > 6.6:
             self.flash((0, 0, 0), 255 * clamp((u - 6.6) / 1.0, 0.0, 1.0))
+
+    def draw_outpost(self, u):
+        """Вид сбоку: двое солдат у лифта слышат его приезд, вскидывают автоматы; дверь открывается — внутри Марк;
+        вбегает Лена, оружие опускают, и Марк уходит вместе с ней."""
+        scr, tx, t = self.screen, self.text, self.clock.t
+        gy = 560
+        scr.fill((26, 30, 34))                                                     # бетонная стена бункера
+        for x in range(0, SW, 128):
+            pygame.draw.line(scr, (18, 22, 26), (x, 0), (x, gy), 3)
+        pygame.draw.rect(scr, (34, 40, 44), (0, 86, SW, 12))
+        pygame.draw.rect(scr, (58, 64, 68), (0, 120, SW, 14))                      # трубы
+        pygame.draw.rect(scr, (44, 50, 54), (0, 144, SW, 8))
+        for x in range(60, SW, 210):
+            pygame.draw.rect(scr, (30, 34, 38), (x, 112, 12, 36))
+        pygame.draw.rect(scr, (34, 38, 42), (0, gy - 70, SW, 70))                  # цоколь с предупреждающими полосами
+        for x in range(-40, SW, 60):
+            pygame.draw.line(scr, (150, 126, 30), (x, gy), (x + 40, gy - 24), 8)
+        tx.draw_text(tx.f_big, "СЕНТИНЕЛ", (44, 52, 56), (330, 300))
+        pygame.draw.rect(scr, (40, 42, 44), (0, gy, SW, SH - gy))                  # пол
+        for x in range(0, SW + 60, 90):
+            pygame.draw.line(scr, (26, 28, 30), (x, gy), (x - 50, SH), 2)
+        pygame.draw.line(scr, (70, 72, 76), (0, gy), (SW, gy), 3)
+        for lx in (260, 640):                                                      # лампы: свет падает на пол
+            pygame.draw.rect(scr, (80, 76, 60), (lx - 40, 70, 80, 10))
+            self.screen.blit(self.tex.glow_lamp, self.tex.glow_lamp.get_rect(center=(lx, 90)))
+        cx = 800                                                                    # лифт
+        op = clamp((u - 4.7) / 1.4, 0.0, 1.0)
+        op = op * op * (3 - 2 * op)
+        pygame.draw.rect(scr, (12, 14, 16), (cx - 136, 186, 272, gy - 186))
+        pygame.draw.rect(scr, (20, 22, 26), (cx - 124, 198, 248, gy - 198))
+        pygame.draw.rect(scr, (10, 10, 12), (cx - 66, 148, 132, 36))                # табло этажа
+        lvl = "-8" if u < 3.0 else "-6"
+        lit = u >= 3.0 and int(t * 5) % 2 == 0 or u < 3.0 and u > 2.2 and int(t * 6) % 2 == 0
+        tx.draw_text(tx.f_mid, lvl, (255, 70, 50) if lit or u >= 3.0 else (150, 40, 30), (cx - 14, 166))
+        pygame.draw.polygon(scr, (255, 70, 50) if u >= 3.0 else (110, 30, 24), [(cx + 28, 176), (cx + 44, 176), (cx + 36, 160)])
+        inner = (cx - 110, 210, 220, gy - 210)
+        pygame.draw.rect(scr, (176, 164, 124), inner)                               # свет кабины
+        pygame.draw.rect(scr, (120, 110, 84), (cx - 110, 210, 220, 30))
+        if op > 0:                                                                  # световое пятно на полу
+            pygame.draw.ellipse(scr, (74, 70, 48), pygame.Rect(int(cx - 110 - 330 * op), gy - 8, int(330 * op + 110), 30))
+        hx_ = cx if u < 9.8 else cx - 100 * clamp((u - 9.8) / 1.4, 0.0, 1.0)         # Марк: в кабине, затем выходит
+        if 4.6 <= u < 12.0:                                                          # дальше Марк идёт следом за Леной (рисуется ниже)
+            side_person(scr, hx_, gy, -1, (46, 68, 84), (34, 38, 52), 1.0, helmet=(138, 44, 40),
+                        walk=t * 8 if u > 9.8 and u < 11.2 else 0.0, hands_up=0.45 if 5.8 <= u < 9.4 else 0.0)
+        pw = int(110 * (1 - op))
+        for x0 in (cx - 110, cx + 110 - pw):                                        # створки дверей
+            pygame.draw.rect(scr, (108, 114, 120), (x0, 210, pw, gy - 210))
+            pygame.draw.rect(scr, (70, 76, 82), (x0, 210, pw, gy - 210), 3)
+            pygame.draw.line(scr, (140, 146, 152), (x0 + pw // 2, 222), (x0 + pw // 2, gy - 12), 2)
+        if u >= 5.4 and u < 8.9:                                                    # красные точки прицелов на груди Марка
+            for dy in (-70, -58):
+                pygame.draw.circle(scr, (255, 40, 40), (int(hx_ - 4 + random.uniform(-2, 2)), int(gy + dy + random.uniform(-2, 2))), 3)
+        aim = clamp((u - 3.3) / 0.6, 0.0, 1.0) * (1.0 - clamp((u - 8.8) / 0.9, 0.0, 1.0))   # автоматы: вскинуты -> опущены
+        jolt = 1.0 if 3.0 <= u < 3.7 else 0.0
+        for sx, sw_ in ((400, 0.0), (510, 1.7)):
+            side_person(scr, sx, gy, 1, (70, 86, 60), (52, 62, 46), 1.0, helmet=(54, 66, 46), rifle=True, aim=aim,
+                        lean=0.35 * jolt + 0.25 * aim + 0.1 * math.sin(t * 1.3 + sw_))
+        run = clamp((u - 7.0) / 1.6, 0.0, 1.0)                                       # Лена вбегает слева
+        if u >= 7.0:
+            lx = -90 + 680 * run
+            face, walk = 1, t * 20
+            if u >= 8.6:
+                lx = 590 + 50 * clamp((u - 9.8) / 1.2, 0.0, 1.0)
+                walk = 0.0 if u < 9.8 or u > 11.0 else t * 8
+            if u >= 12.0:                                                            # уходят вместе влево
+                k = clamp((u - 12.0) / 3.2, 0.0, 1.0)
+                lx, face, walk = 640 - 740 * k, -1, t * 8
+            side_person(scr, lx, gy + 8, face, (190, 130, 70), (60, 54, 46), 1.0, hair=(96, 60, 36), ponytail=True,
+                        walk=walk, hands_up=0.8 if 8.6 <= u < 9.8 else 0.0)
+        if u >= 12.0:                                                                # Марк идёт следом
+            k = clamp((u - 12.0) / 3.2, 0.0, 1.0)
+            side_person(scr, 700 - 740 * k + 24, gy, -1, (46, 68, 84), (34, 38, 52), 1.0, helmet=(138, 44, 40), walk=t * 8 + 1.2)
+        for bx in (40, 118):                                                         # мешки с песком на переднем плане
+            pygame.draw.ellipse(scr, (70, 62, 44), pygame.Rect(bx - 40, gy - 24, 100, 30))
+            pygame.draw.ellipse(scr, (96, 86, 62), pygame.Rect(bx - 36, gy - 26, 92, 24))
+        if 3.0 <= u < 3.15:                                                          # вспышка при «динь»
+            self.flash((255, 255, 255), 160)
+        if u > 15.0:
+            self.flash((0, 0, 0), 255 * clamp((u - 15.0) / 1.0, 0.0, 1.0))
 
     def draw(self):
         c, scr = self.cin, self.screen
@@ -6295,6 +6573,7 @@ class Game:
     def begin_cinematic(self, name):
         """Кат-сцена без управления: 'fall' (лифт падает на -10) или 'blast' (подрыв завала)."""
         self.audio.stop("alarm")
+        self.s.cin_name = name
         self.cin.begin(name)
         self.cin_view.prepare()
         self.screens.start_fade(0.4)
@@ -6403,9 +6682,12 @@ class Game:
                 if self.s.floor == 0 and data == 3:  # с -3 лифт не поднимается: трос рвётся, кабина падает на -10
                     self.after_cin = (3, self.s.carry())
                     self.begin_cinematic("fall")
+                elif data == 5:                      # прибытие на аванпост: сцена у лифта, потом карточка этажа
+                    self.after_cin = (5, self.s.carry())
+                    self.begin_cinematic("outpost")
                 else:
                     self.begin_floor_card(data, self.s.carry())
-            elif ev == "fall_done":
+            elif ev in ("fall_done", "outpost_done"):
                 self.begin_floor_card(*self.after_cin)
             elif ev == "evac_start":                 # консоль аванпоста: вызов эвакуации, отсчёт 60 секунд
                 self.evac.start()
