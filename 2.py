@@ -790,86 +790,651 @@ def paint_outpost(world, rooms, font):
         pygame.draw.rect(world, (190, 168, 40), (x, 13 * T + T // 2 - 2, 34, 4))
 
 
-def draw_figure(scr, x, y, coat, size=1.0, hair=(40, 30, 24), skin=(196, 168, 140)):
-    """Человек сверху: плечи, голова, волосы или шлем."""
-    box = pygame.Rect(int(x - 20 * size), int(y - 13 * size), int(40 * size), int(26 * size))
-    pygame.draw.ellipse(scr, (6, 6, 8), box.move(3, 4))
-    pygame.draw.ellipse(scr, coat, box)
-    pygame.draw.ellipse(scr, shade(coat, -40), box, 2)
-    pygame.draw.circle(scr, skin, (int(x), int(y)), int(9 * size))
-    pygame.draw.circle(scr, hair, (int(x - 2 * size), int(y)), int(8 * size))
+MASK_W = (255, 255, 255, 255)
 
 
-def side_person(scr, x, gy, face, coat, pants, sc=1.0, hair=(40, 30, 24), helmet=None, walk=0.0, aim=None, hands_up=0.0,
-                ponytail=False, rifle=False, lean=0.0):
+def radial_gray(r, peak):
+    """RGB-градиент (центр ярче) для подсветки/затенения через BLEND_RGB_ADD / SUB."""
+    s = pygame.Surface((r * 2, r * 2))
+    for i in range(r, 0, -1):
+        v = int(peak * (1 - i / r) ** 1.6)
+        pygame.draw.circle(s, (v, v, v), (r, r), i)
+    return s
+
+def light_pass(base, spots):
+    """spots: (cx, cy, r, peak, sign). Объём: блики ADD, тени SUB. Альфа спрайта не меняется — вне фигуры ничего не видно."""
+    for cx, cy, r, peak, sign in spots:
+        g = radial_gray(r, peak)
+        base.blit(g, (cx - r, cy - r), special_flags=pygame.BLEND_RGB_ADD if sign > 0 else pygame.BLEND_RGB_SUB)
+
+def outlined(base, col=(10, 10, 12), w=2):
+    """Тёмный контур по силуэту (силуэт чернится и смещается по 8 направлениям под спрайт)."""
+    sil = base.copy()
+    sil.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGB_MULT)
+    sil.fill((col[0], col[1], col[2], 255), special_flags=pygame.BLEND_RGB_ADD)
+    out = pygame.Surface(base.get_size(), pygame.SRCALPHA)
+    for dx, dy in ((-w, 0), (w, 0), (0, -w), (0, w), (-w, -w), (w, w), (-w, w), (w, -w)):
+        out.blit(sil, (dx, dy))
+    out.blit(base, (0, 0))
+    return out
+
+def knit(base, cx, cy, r0, r1, col, rings, spokes):
+    """Вязка: кольца из мелких «галочек»."""
+    for k in range(rings):
+        r = r0 + (r1 - r0) * k / max(1, rings - 1)
+        n = int(spokes * (0.4 + 0.6 * r / r1))
+        for i in range(n):
+            a = 2 * math.pi * i / n + (k % 2) * math.pi / n
+            x, y = cx + math.cos(a) * r, cy + math.sin(a) * r
+            tx, ty = -math.sin(a), math.cos(a)
+            pygame.draw.line(base, col, (x - tx * 2 + math.cos(a) * 1.5, y - ty * 2 + math.sin(a) * 1.5), (x, y), 1)
+            pygame.draw.line(base, col, (x + tx * 2 + math.cos(a) * 1.5, y + ty * 2 + math.sin(a) * 1.5), (x, y), 1)
+
+def make_player_hi():
+    """Марк сверху (смотрит вправо), 128x128: рюкзак с клапаном и пряжками, куртка с швами, плечами и светоотражающими полосами,
+    капюшон-воротник, вязаная шапка с отворотом и помпоном, уши, пряди. Освещение сверху-слева, контур, объём."""
+    S = 128
+    base = pygame.Surface((S, S), pygame.SRCALPHA)
+    # --- рюкзак
+    pk = textured((S, S), lambda m: pygame.draw.rect(m, MASK_W, (6, 34, 42, 60), border_radius=10), make_fabric((96, 72, 46), S))
+    base.blit(pk, (0, 0))
+    pygame.draw.rect(base, (70, 50, 30), (6, 34, 42, 20), border_radius=9)                    # клапан
+    pygame.draw.rect(base, (108, 82, 54), (9, 36, 36, 15), border_radius=7)
+    for x in (16, 36):
+        pygame.draw.rect(base, (40, 30, 22), (x, 52, 7, 9), border_radius=2)                    # пряжки
+        pygame.draw.rect(base, (186, 170, 110), (x + 1, 54, 5, 5), border_radius=1)
+    for y in (66, 78):
+        pygame.draw.line(base, (52, 38, 24), (9, y), (46, y), 2)                                # стяжки
+    for y in (50, 74):
+        pygame.draw.rect(base, (82, 60, 38), (2, y, 8, 18), border_radius=4)                    # боковые карманы
+    pygame.draw.rect(base, (30, 22, 14), (6, 34, 42, 60), 2, border_radius=10)
+    for (x1, y1, x2, y2) in ((12, 38, 12, 52), (40, 38, 40, 52)):                                 # швы клапана
+        pygame.draw.line(base, (58, 42, 28), (x1, y1), (x2, y2), 1)
+    # --- плечи/рукава и торс
+    jf = make_fabric((52, 76, 94), S)
+    for (cx, cy) in ((64, 21), (64, 107)):
+        sl = textured((S, S), lambda m, cx=cx, cy=cy: pygame.draw.ellipse(m, MASK_W, (cx - 22, cy - 11, 44, 22)), jf)
+        base.blit(sl, (0, 0))
+        pygame.draw.ellipse(base, (22, 34, 44), (cx - 22, cy - 11, 44, 22), 2)
+    torso = textured((S, S), lambda m: pygame.draw.ellipse(m, MASK_W, (30, 16, 66, 96)), jf)
+    base.blit(torso, (0, 0))
+    pygame.draw.ellipse(base, (22, 34, 44), (30, 16, 66, 96), 3)
+    for (cx, cy) in ((72, 22), (72, 106)):                                                       # светоотражающие полосы на рукавах
+        pygame.draw.rect(base, (44, 60, 74), (cx - 6, cy - 8, 12, 16), border_radius=2)
+        pygame.draw.rect(base, (226, 214, 110), (cx - 3, cy - 8, 3, 16))
+        pygame.draw.rect(base, (226, 214, 110), (cx + 2, cy - 8, 3, 16))
+    pygame.draw.line(base, (26, 40, 52), (34, 64), (70, 64), 2)                                   # центральный шов спины
+    pygame.draw.arc(base, (30, 46, 60), (36, 22, 52, 84), -1.2, 1.2, 2)                           # кокетка
+    for (x1, y1, x2, y2) in ((44, 34, 58, 38), (44, 94, 58, 90), (50, 50, 60, 54), (50, 78, 60, 74)):   # складки ткани
+        pygame.draw.line(base, (36, 54, 68), (x1, y1), (x2, y2), 2)
+    # --- воротник-капюшон
+    pygame.draw.circle(base, (28, 42, 54), (79, 64), 22)
+    col = textured((S, S), lambda m: pygame.draw.circle(m, MASK_W, (79, 64), 20), make_fabric((60, 86, 104), S))
+    base.blit(col, (0, 0))
+    pygame.draw.circle(base, (24, 38, 50), (79, 64), 20, 2)
+    pygame.draw.circle(base, (24, 38, 50), (79, 64), 15, 1)
+    # --- уши, шапка
+    for sd in (-1, 1):
+        pygame.draw.ellipse(base, (150, 112, 92), (76, 64 + sd * 17 - 5, 10, 11))
+        pygame.draw.ellipse(base, (206, 166, 140), (78, 64 + sd * 17 - 3, 5, 7))
+    hat = textured((S, S), lambda m: pygame.draw.circle(m, MASK_W, (81, 64), 16), make_fabric((150, 48, 44), S))
+    base.blit(hat, (0, 0))
+    pygame.draw.circle(base, (62, 18, 18), (81, 64), 16, 2)
+    pygame.draw.circle(base, (92, 28, 28), (81, 64), 12, 1)
+    knit(base, 81, 64, 4, 12, (100, 30, 30), 5, 22)
+    pygame.draw.arc(base, (112, 34, 32), (65, 48, 32, 32), math.pi * 0.55, math.pi * 1.45, 5)       # отворот сзади
+    for k in range(7):                                                                              # помпон
+        a = k * 0.9
+        pygame.draw.line(base, (214, 196, 188), (81, 64), (81 + math.cos(a) * 4, 64 + math.sin(a) * 4), 2)
+    pygame.draw.circle(base, (236, 222, 214), (81, 64), 3)
+    for k in range(6):                                                                              # выбившиеся пряди
+        a = math.pi * (0.78 + 0.07 * k)
+        pygame.draw.line(base, (46, 32, 24), (81 + math.cos(a) * 15, 64 + math.sin(a) * 15), (81 + math.cos(a) * 19, 64 + math.sin(a) * 19 - 1), 1)
+    # --- объём: блики сверху-слева, тени снизу-справа
+    light_pass(base, [(52, 40, 34, 70, 1), (78, 52, 22, 78, 1), (22, 48, 26, 40, 1),
+                      (78, 94, 30, 52, -1), (60, 108, 26, 44, -1), (30, 86, 24, 36, -1), (100, 66, 22, 30, -1)])
+    return outlined(base, (8, 10, 12), 2)
+
+def jag_poly(cx, cy, rw, rh, n, jit, rnd):
+    """Рваный контур (края содранной кожи)."""
+    pts = []
+    for i in range(n):
+        a = 2 * math.pi * i / n
+        k = 1.0 + rnd.uniform(-jit, jit)
+        pts.append((cx + math.cos(a) * rw * k, cy + math.sin(a) * rh * k))
+    return pts
+
+def make_monster_hi():
+    """Тело и череп монстра сверху (смотрит вправо), 224x224: кожа с венами и пятнами, содранная кожа с мышечными волокнами,
+    рёбра-дуги с суставами, позвоночник с отростками, лопатки, рана со швами, череп с надбровьями, скулами и красным светом в глазницах."""
+    rnd = random.Random(11)
+    S = 224
+    base = pygame.Surface((S, S), pygame.SRCALPHA)
+    flesh = make_skin_texture(S, S, (138, 124, 114), veins=22, vein=(112, 28, 38), spots=14, spot=(62, 48, 46))
+    neck = textured((S, S), lambda m: pygame.draw.ellipse(m, MASK_W, (116, 90, 48, 44)), flesh)
+    base.blit(neck, (0, 0))
+    pygame.draw.ellipse(base, (30, 16, 16), (116, 90, 48, 44), 3)
+    torso = textured((S, S), lambda m: pygame.draw.ellipse(m, MASK_W, (46, 40, 112, 144)), flesh)
+    base.blit(torso, (0, 0))
+    pygame.draw.ellipse(base, (30, 14, 14), (46, 40, 112, 144), 4)
+    # лопатки
+    for sd in (-1, 1):
+        cy = 112 + sd * 46
+        pts = [(86, cy - 16), (112, cy - 12), (118, cy + 6), (96, cy + 18), (82, cy + 4)]
+        pygame.draw.polygon(base, (50, 36, 32), pts)
+        pygame.draw.polygon(base, (206, 196, 172), [(100 + (x - 100) * 0.82, cy + (y - cy) * 0.78) for x, y in pts])
+        pygame.draw.line(base, (150, 138, 118), (92, cy - 4), (112, cy + 2), 2)
+    # содранная кожа: мышечные пласты с волокнами, мокрыми бликами и рваным краем
+    for (cx, cy, rw, rh, ang) in ((92, 78, 22, 14, 0.2), (122, 148, 24, 16, -0.3), (80, 134, 15, 12, 0.1), (126, 84, 12, 10, 0.4)):
+        edge = [(x, y) for x, y in jag_poly(cx, cy, rw + 4, rh + 4, 14, 0.16, rnd)]
+        pygame.draw.polygon(base, (60, 14, 18), edge)
+        pygame.draw.polygon(base, (132, 28, 34), jag_poly(cx, cy, rw, rh, 12, 0.08, rnd))
+        for k in range(-rw + 3, rw - 2, 4):
+            pygame.draw.line(base, (88, 14, 22), (cx + k, cy - rh + 3), (cx + k + 2, cy + rh - 3), 2)
+            pygame.draw.line(base, (166, 54, 58), (cx + k + 1, cy - rh + 4), (cx + k + 3, cy + rh - 5), 1)
+        pygame.draw.circle(base, (244, 186, 176), (cx - rw // 2, cy - rh // 2), 2)
+    # рёбра: изогнутые костяные дуги, длина зависит от ширины торса в этой точке; сустав у позвоночника
+    for i in range(8):
+        x = 60 + i * 12
+        half = 72 * math.sqrt(max(0.0, 1 - ((x - 102) / 58.0) ** 2))
+        for sd in (-1, 1):
+            ln = half * (0.80 - 0.04 * ((i + (sd > 0)) % 3))
+            p1 = (x, 112 + sd * 4)
+            p2 = (x + 4, 112 + sd * ln * 0.55)
+            p3 = (x - 5, 112 + sd * ln)
+            pygame.draw.lines(base, (60, 42, 38), False, [p1, p2, p3], 6)
+            pygame.draw.lines(base, (206, 196, 172), False, [(p1[0] + 1, p1[1]), (p2[0] + 1, p2[1]), (p3[0] + 1, p3[1] - sd)], 4)
+            pygame.draw.lines(base, (246, 238, 216), False, [(p1[0] + 1, p1[1] + sd * 2), (p2[0] + 2, p2[1]), (p3[0] + 1, p3[1] - sd * 4)], 1)
+            pygame.draw.circle(base, (66, 50, 42), (int(p3[0]), int(p3[1])), 4)
+            pygame.draw.circle(base, (190, 178, 152), (int(p3[0]), int(p3[1])), 3)
+    # позвоночник: позвонки с отростками
+    for i in range(10):
+        x = 56 + i * 10
+        pygame.draw.line(base, (60, 44, 38), (x, 112), (x - 8, 112 + (i % 2) * 2), 5)
+        pygame.draw.circle(base, (34, 22, 20), (x + 1, 113), 7)
+        pygame.draw.circle(base, (226, 216, 190), (x, 112), 6)
+        pygame.draw.circle(base, (176, 164, 140), (x + 1, 114), 3)
+        pygame.draw.circle(base, (255, 250, 232), (x - 2, 110), 1)
+    # рана со швами
+    wound = [(104, 120), (120, 112), (136, 120), (132, 140), (112, 144)]
+    pygame.draw.polygon(base, (66, 8, 12), wound)
+    pygame.draw.polygon(base, (138, 26, 32), [(110, 124), (120, 117), (131, 124), (127, 136), (114, 138)])
+    for k in range(5):
+        pygame.draw.line(base, (18, 12, 10), (108 + k * 6, 114), (110 + k * 6, 144), 2)
+        pygame.draw.line(base, (18, 12, 10), (106 + k * 6, 122), (114 + k * 6, 130), 1)
+    # череп
+    bone = make_skin_texture(S, S, (210, 202, 176), veins=5, vein=(124, 102, 90), spots=8, spot=(126, 104, 82))
+    skull = textured((S, S), lambda m: pygame.draw.ellipse(m, MASK_W, (132, 84, 76, 56)), bone)
+    base.blit(skull, (0, 0))
+    pygame.draw.ellipse(base, (44, 30, 28), (132, 84, 76, 56), 3)
+    pygame.draw.arc(base, (150, 134, 112), (138, 88, 56, 22), 0.4, 2.7, 3)                           # надбровья
+    pygame.draw.arc(base, (150, 134, 112), (138, 106, 56, 22), -2.7, -0.4, 3)
+    for (x1, y1, x2, y2) in ((144, 92, 160, 104), (192, 100, 180, 116), (152, 132, 168, 120), (150, 112, 164, 114)):   # трещины
+        pygame.draw.line(base, (60, 44, 38), (x1, y1), (x2, y2), 2)
+    pygame.draw.line(base, (30, 22, 20), (170, 86), (170, 138), 1)                                    # шов черепа
+    for k in range(7):
+        pygame.draw.line(base, (30, 22, 20), (168, 90 + k * 7), (172, 93 + k * 7), 1)
+    for yy in (94, 118):                                                                              # глазницы с красным огнём
+        pygame.draw.ellipse(base, (4, 0, 0), (164, yy - 8, 28, 20))
+        pygame.draw.ellipse(base, (110, 16, 18), (164, yy - 8, 28, 20), 2)
+        pygame.draw.ellipse(base, (170, 24, 22), (174, yy - 3, 11, 9))
+        pygame.draw.circle(base, (255, 176, 120), (178, yy - 1), 2)
+    pygame.draw.line(base, (30, 18, 16), (200, 106), (206, 112), 3)                                   # ноздри
+    pygame.draw.line(base, (30, 18, 16), (200, 118), (206, 112), 3)
+    light_pass(base, [(82, 62, 46, 64, 1), (170, 96, 30, 60, 1), (70, 120, 30, 36, 1),
+                      (110, 168, 44, 58, -1), (150, 150, 26, 40, -1), (186, 130, 22, 36, -1), (60, 160, 26, 34, -1)])
+    return outlined(base, (8, 4, 4), 3)
+
+PERSONS = {
+    "soldier": {"coat": (84, 98, 66)}, "lena": {"coat": (196, 120, 64)}, "scientist": {"coat": (222, 224, 230)},
+    "kessler": {"coat": (34, 34, 42)}, "guard": {"coat": (66, 70, 80)},
+}
+
+def make_person_hi(kind):
+    """Человек сверху (смотрит вправо), 96x96: плечи/куртка из ткани, голова с волосами/шлемом/фуражкой, детали по роли
+    (разгрузка и автомат, шарф и хвост, халат с бейджем, костюм, форма). Свет сверху-слева, контур."""
+    S = 96
+    rnd = random.Random({"soldier": 1, "lena": 2, "scientist": 3, "kessler": 4, "guard": 5}[kind])
+    base = pygame.Surface((S, S), pygame.SRCALPHA)
+    coat = PERSONS[kind]["coat"]
+    cf = make_fabric(coat, S)
+    if kind == "soldier":                                    # камуфляж: пятна поверх ткани
+        for _ in range(26):
+            pygame.draw.ellipse(cf, shade(coat, rnd.choice((-30, -18, 16))), (rnd.randint(0, S - 12), rnd.randint(0, S - 8), rnd.randint(6, 16), rnd.randint(4, 10)))
+    sk, sk_d = (206, 168, 140), (150, 112, 92)
+
+    def body(rect, col=None, tex=None):
+        t = textured((S, S), lambda m: pygame.draw.ellipse(m, MASK_W, rect), tex or cf)
+        base.blit(t, (0, 0))
+        pygame.draw.ellipse(base, shade(col or coat, -55), rect, 2)
+
+    # --- рюкзак/сумка (за спиной)
+    if kind == "soldier":
+        bp = textured((S, S), lambda m: pygame.draw.rect(m, MASK_W, (4, 28, 24, 40), border_radius=6), make_fabric((60, 70, 50), S))
+        base.blit(bp, (0, 0)); pygame.draw.rect(base, (28, 34, 24), (4, 28, 24, 40), 2, border_radius=6)
+        for y in (36, 48, 58): pygame.draw.line(base, (40, 48, 34), (6, y), (26, y), 1)
+    if kind == "lena":
+        pygame.draw.rect(base, (60, 40, 24), (26, 66, 26, 18), border_radius=4)               # сумка на бедре
+        pygame.draw.rect(base, (126, 86, 52), (28, 68, 22, 14), border_radius=3)
+        pygame.draw.rect(base, (176, 134, 84), (36, 70, 6, 5))
+    # --- руки (рукава)
+    arm_col = shade(coat, -22)
+    if kind == "soldier":
+        for sy_, hy in ((18, 42), (78, 54)):
+            pygame.draw.line(base, shade(coat, -60), (44, sy_), (66 if hy == 42 else 76, hy), 12)
+            pygame.draw.line(base, arm_col, (44, sy_), (66 if hy == 42 else 76, hy), 9)
+    elif kind in ("lena", "scientist", "guard"):
+        for sd in (-1, 1):
+            pygame.draw.line(base, shade(coat, -60), (44, 48 + sd * 26), (66, 48 + sd * 30), 12)
+            pygame.draw.line(base, arm_col, (44, 48 + sd * 26), (66, 48 + sd * 30), 9)
+            pygame.draw.circle(base, (36, 30, 28) if kind != "scientist" else (200, 150, 128), (67, 48 + sd * 30), 5)
+    # --- торс
+    body((22, 12, 50, 72))
+    # --- детали торса
+    if kind == "soldier":                                    # разгрузочный жилет с подсумками и пластиной
+        pygame.draw.ellipse(base, (50, 58, 44), (32, 20, 34, 56))
+        pygame.draw.ellipse(base, (22, 28, 20), (32, 20, 34, 56), 2)
+        for y in (26, 38, 52, 64):
+            pygame.draw.rect(base, (36, 42, 32), (50, y, 10, 8), border_radius=2)
+            pygame.draw.rect(base, (74, 84, 62), (51, y + 1, 8, 4), border_radius=1)
+        pygame.draw.rect(base, (28, 32, 26), (30, 44, 8, 8))
+    elif kind == "scientist":
+        pygame.draw.line(base, (170, 174, 184), (28, 48), (60, 48), 2)                         # шов спины
+        for (x1, y1, x2, y2) in ((30, 24, 44, 28), (30, 74, 44, 70), (36, 36, 48, 40), (36, 62, 48, 58)):
+            pygame.draw.line(base, (186, 190, 200), (x1, y1), (x2, y2), 2)                       # складки халата
+        pygame.draw.rect(base, (60, 150, 90), (56, 62, 7, 9), border_radius=1)                  # бейдж
+        pygame.draw.line(base, (30, 80, 170), (60, 60), (60, 62), 1)
+    elif kind == "kessler":
+        for sd in (-1, 1):
+            pygame.draw.polygon(base, (60, 60, 72), [(60, 48 + sd * 4), (70, 48 + sd * 14), (62, 48 + sd * 17)])   # лацканы
+        pygame.draw.rect(base, (200, 28, 36), (54, 66, 8, 5))                                   # платок
+        pygame.draw.line(base, (52, 52, 62), (28, 48), (54, 48), 2)
+    elif kind == "guard":
+        for sd in (-1, 1):
+            pygame.draw.rect(base, (170, 150, 70), (54, 48 + sd * 28 - 3, 10, 6), border_radius=1)  # погоны
+        pygame.draw.rect(base, (18, 18, 22), (44, 62, 9, 12), border_radius=2)                  # рация
+        pygame.draw.line(base, (60, 60, 66), (48, 62), (50, 52), 2)
+    elif kind == "lena":
+        pygame.draw.line(base, (160, 92, 46), (28, 48), (56, 48), 2)
+        pygame.draw.rect(base, (84, 56, 32), (40, 14, 12, 7), border_radius=2)                  # заклёпки/карман
+    # --- шарф/воротник
+    if kind == "lena":
+        pygame.draw.circle(base, (22, 70, 76), (56, 48), 19)
+        sc = textured((S, S), lambda m: pygame.draw.circle(m, MASK_W, (56, 48), 17), make_fabric((40, 130, 138), S))
+        base.blit(sc, (0, 0))
+        for a in range(0, 360, 40):
+            pygame.draw.line(base, (24, 90, 96), (56 + math.cos(math.radians(a)) * 9, 48 + math.sin(math.radians(a)) * 9),
+                             (56 + math.cos(math.radians(a)) * 17, 48 + math.sin(math.radians(a)) * 17), 1)
+    elif kind == "scientist":
+        for sd in (-1, 1):
+            pygame.draw.polygon(base, (246, 248, 252), [(58, 48 + sd * 3), (66, 48 + sd * 11), (58, 48 + sd * 14)])
+            pygame.draw.polygon(base, (150, 154, 166), [(58, 48 + sd * 3), (66, 48 + sd * 11), (58, 48 + sd * 14)], 1)
+    elif kind == "kessler":
+        pygame.draw.ellipse(base, (240, 240, 244), (54, 38, 16, 20))
+    # --- голова
+    hx, hy = 58, 48
+    if kind == "soldier":
+        pygame.draw.circle(base, (20, 26, 18), (hx, hy), 17)
+        hm = textured((S, S), lambda m: pygame.draw.circle(m, MASK_W, (hx, hy), 15), cf)
+        base.blit(hm, (0, 0))
+        for k in range(-3, 4):                                                                  # сетка маскировки
+            pygame.draw.line(base, shade(coat, -40), (hx - 12, hy + k * 4), (hx + 12, hy + k * 4), 1)
+            pygame.draw.line(base, shade(coat, -40), (hx + k * 4, hy - 12), (hx + k * 4, hy + 12), 1)
+        pygame.draw.circle(base, (20, 26, 18), (hx, hy), 15, 2)
+        pygame.draw.rect(base, (26, 28, 30), (hx + 11, hy - 6, 7, 12), border_radius=2)       # крепление ПНВ
+        pygame.draw.circle(base, (60, 180, 110), (hx + 17, hy), 2)
+        pygame.draw.arc(base, (30, 36, 26), (hx - 12, hy - 16, 24, 32), 1.7, 4.6, 2)           # ремешок
+    elif kind == "guard":
+        pygame.draw.circle(base, (22, 22, 28), (hx, hy), 16)
+        pygame.draw.circle(base, (44, 46, 56), (hx, hy), 14)                                    # фуражка
+        pygame.draw.circle(base, (170, 150, 70), (hx, hy), 5)
+        pygame.draw.polygon(base, (14, 14, 18), [(hx + 8, hy - 11), (hx + 20, hy - 7), (hx + 20, hy + 7), (hx + 8, hy + 11)])   # козырёк
+        pygame.draw.circle(base, (22, 22, 28), (hx, hy), 14, 2)
+    else:
+        pygame.draw.ellipse(base, sk_d, (hx - 6, hy - 18, 9, 10)); pygame.draw.ellipse(base, sk_d, (hx - 6, hy + 8, 9, 10))   # уши
+        hair = {"lena": (104, 64, 38), "scientist": (150, 148, 150), "kessler": (156, 156, 164)}[kind]
+        pygame.draw.circle(base, shade(hair, -50), (hx, hy), 14)
+        ht = textured((S, S), lambda m: pygame.draw.circle(m, MASK_W, (hx, hy), 13), make_fabric(hair, S))
+        base.blit(ht, (0, 0))
+        if kind == "lena":
+            pygame.draw.line(base, shade(hair, -40), (hx - 12, hy), (hx + 8, hy), 1)             # пробор
+            pts = [(hx - 12, hy), (hx - 22, hy + 6), (hx - 30, hy + 4), (hx - 36, hy + 12)]     # хвост
+            pygame.draw.lines(base, shade(hair, -45), False, pts, 8)
+            pygame.draw.lines(base, hair, False, pts, 5)
+            pygame.draw.circle(base, (30, 140, 150), (hx - 14, hy + 1), 3)                       # резинка
+        elif kind == "kessler":
+            for k in range(-3, 4):
+                pygame.draw.line(base, (210, 210, 218), (hx - 11, hy + k * 3), (hx + 6, hy + k * 3 + 1), 1)   # зализанные волосы
+        elif kind == "scientist":
+            for k in range(6):
+                a = k * 1.05
+                pygame.draw.line(base, (186, 184, 188), (hx, hy), (hx + math.cos(a) * 11, hy + math.sin(a) * 11), 1)
+    # --- автомат (поверх рук)
+    if kind == "soldier":
+        pygame.draw.rect(base, (14, 14, 16), (34, 47, 14, 10), border_radius=2)                 # приклад
+        pygame.draw.rect(base, (46, 46, 52), (36, 48, 11, 7), border_radius=2)
+        pygame.draw.rect(base, (14, 14, 16), (46, 45, 26, 12), border_radius=2)                 # ствольная коробка и цевьё
+        pygame.draw.rect(base, (52, 52, 58), (47, 46, 24, 9), border_radius=2)
+        pygame.draw.rect(base, (14, 14, 16), (70, 48, 22, 6))                                    # ствол
+        pygame.draw.rect(base, (70, 72, 80), (71, 49, 20, 3))
+        pygame.draw.rect(base, (22, 22, 26), (88, 46, 6, 10), border_radius=1)                  # пламегаситель
+        pygame.draw.circle(base, (26, 28, 30), (56, 51), 4)                                      # прицел
+        pygame.draw.circle(base, (90, 190, 220), (56, 51), 2)
+        for hx2, hy2 in ((64, 43), (76, 55)):                                                     # перчатки на рукоятях
+            pygame.draw.circle(base, (22, 22, 24), (hx2, hy2), 5)
+    light_pass(base, [(34, 30, 26, 60, 1), (54, 38, 16, 50, 1), (50, 74, 24, 46, -1), (70, 56, 14, 28, -1)])
+    return outlined(base, (8, 8, 10), 2)
+
+SKIN = (206, 168, 140)
+
+def _part(size, draw):
+    s = pygame.Surface(size, pygame.SRCALPHA)
+    draw(s)
+    return s
+
+def make_side_rig(kind):
     """
-    Человек сбоку (для кат-сцен). face: +1 смотрит вправо, -1 влево. walk — фаза шага. rifle — автомат в руках,
-    aim 0..1: от «опущен» до «вскинут и нацелен». hands_up 0..1 — руки вперёд/вверх. lean — наклон корпуса.
+    Боковой «скелет» человека для кат-сцен: части запечены в 2x и рисуются повёрнутыми (голова, торс, рукав, штанина с ботинком,
+    автомат, рюкзак). kind: mark | lena | soldier. Все части смотрят вправо; для взгляда влево части отражаются.
     """
-    skin = (196, 168, 140)
+    rnd = random.Random({"mark": 1, "lena": 2, "soldier": 3}[kind])
+    coat = {"mark": (52, 76, 94), "lena": (196, 120, 64), "soldier": (84, 98, 66)}[kind]
+    pants = {"mark": (40, 46, 62), "lena": (62, 56, 48), "soldier": (62, 72, 52)}[kind]
+    cf = make_fabric(coat, 160)
+    pf = make_fabric(pants, 160)
+    if kind == "soldier":
+        for _ in range(40):
+            pygame.draw.ellipse(cf, shade(coat, rnd.choice((-28, -16, 14))), (rnd.randint(0, 140), rnd.randint(0, 140), rnd.randint(8, 22), rnd.randint(6, 14)))
+        for _ in range(40):
+            pygame.draw.ellipse(pf, shade(pants, rnd.choice((-24, -14, 12))), (rnd.randint(0, 140), rnd.randint(0, 140), rnd.randint(8, 22), rnd.randint(6, 14)))
+    rig = {}
+
+    # ---------------- голова 80x84 (центр головы (40,38); шея снизу)
+    def head(s):
+        pygame.draw.rect(s, (150, 112, 92), (22, 56, 26, 28))                                      # шея
+        pygame.draw.rect(s, (24, 18, 16), (22, 56, 26, 28), 1)
+        pygame.draw.ellipse(s, (20, 14, 12), (8, 6, 64, 62))
+        pygame.draw.ellipse(s, SKIN, (10, 8, 60, 58))
+        pygame.draw.polygon(s, SKIN, [(66, 38), (78, 48), (66, 54)])                               # нос
+        pygame.draw.lines(s, (150, 112, 92), False, [(66, 38), (78, 48), (66, 54)], 1)
+        pygame.draw.ellipse(s, (248, 248, 246), (50, 32, 14, 9))                                   # глаз
+        pygame.draw.circle(s, (46, 40, 36), (60, 36), 3)
+        pygame.draw.circle(s, (255, 255, 255), (59, 35), 1)
+        pygame.draw.line(s, (60, 44, 34), (48, 27), (64, 28), 3)                                   # бровь
+        pygame.draw.line(s, (136, 80, 76), (56, 56), (68, 55), 2)                                  # рот
+        pygame.draw.ellipse(s, (172, 130, 108), (22, 34, 13, 18))                                  # ухо
+        pygame.draw.ellipse(s, (132, 90, 74), (25, 38, 6, 10))
+        if kind == "mark":                                                                         # вязаная шапка с отворотом и помпоном
+            hat = textured((80, 84), lambda m: pygame.draw.ellipse(m, MASK_W, (8, 0, 62, 40)), make_fabric((150, 48, 44), 80))
+            s.blit(hat, (0, 0))
+            pygame.draw.ellipse(s, (62, 18, 18), (8, 0, 62, 40), 2)
+            pygame.draw.rect(s, (118, 34, 32), (9, 24, 60, 12), border_radius=4)                   # отворот
+            pygame.draw.rect(s, (62, 18, 18), (9, 24, 60, 12), 1, border_radius=4)
+            for x in range(14, 66, 5):
+                pygame.draw.line(s, (96, 28, 28), (x, 4), (x - 2, 24), 1)
+                pygame.draw.line(s, (84, 24, 24), (x + 2, 26), (x + 2, 34), 1)
+            pygame.draw.circle(s, (214, 196, 188), (38, 2), 6)
+            pygame.draw.circle(s, (240, 228, 220), (36, 0), 2)
+        elif kind == "soldier":                                                                    # шлем с ремешком и креплением ПНВ
+            hm = textured((80, 84), lambda m: pygame.draw.ellipse(m, MASK_W, (4, -4, 70, 46)), cf)
+            s.blit(hm, (0, 0))
+            pygame.draw.ellipse(s, (20, 26, 18), (4, -4, 70, 46), 2)
+            pygame.draw.rect(s, (40, 48, 34), (6, 28, 68, 8), border_radius=3)                     # кромка
+            for k in range(4):
+                pygame.draw.line(s, shade(coat, -40), (10 + k * 14, 4), (6 + k * 14, 28), 1)
+            pygame.draw.rect(s, (24, 26, 28), (60, 8, 12, 16), border_radius=2)                    # ПНВ
+            pygame.draw.circle(s, (70, 200, 120), (70, 16), 3)
+            pygame.draw.line(s, (30, 36, 26), (34, 38), (44, 64), 2)                               # ремешок
+            pygame.draw.line(s, (30, 36, 26), (44, 64), (56, 54), 2)
+        else:                                                                                      # Лена: каштановые волосы, чёлка, хвост
+            hair = (104, 64, 38)
+            hr = textured((80, 84), lambda m: pygame.draw.ellipse(m, MASK_W, (6, 0, 60, 44)), make_fabric(hair, 80))
+            s.blit(hr, (0, 0))
+            pygame.draw.polygon(s, hair, [(12, 30), (24, 56), (30, 40), (22, 22)])                 # пряди сзади
+            pygame.draw.polygon(s, hair, [(46, 6), (70, 18), (66, 30), (52, 22)])                  # чёлка
+            pygame.draw.lines(s, shade(hair, 36), False, [(20, 6), (40, 2), (62, 12)], 2)          # блик
+            pygame.draw.polygon(s, shade(hair, -30), [(10, 22), (2, 44), (8, 66), (16, 70), (14, 44)])   # хвост
+            pygame.draw.polygon(s, hair, [(12, 24), (5, 44), (10, 64), (15, 62), (14, 44)])
+            pygame.draw.rect(s, (30, 140, 150), (8, 28, 10, 6), border_radius=2)                   # резинка
+    rig["head"] = outlined(_part((80, 84), head), (10, 8, 8), 2)
+
+    # ---------------- торс 76x136
+    def torso(s):
+        t = textured((76, 136), lambda m: pygame.draw.rect(m, MASK_W, (4, 4, 68, 128), border_radius=18), cf)
+        s.blit(t, (0, 0))
+        pygame.draw.rect(s, shade(coat, -60), (4, 4, 68, 128), 2, border_radius=18)
+        pygame.draw.line(s, shade(coat, -50), (44, 20), (44, 128), 2)                              # молния/планка
+        for y in (30, 60, 90):
+            pygame.draw.line(s, shade(coat, -40), (42, y), (46, y), 1)
+        for (x1, y1, x2, y2) in ((16, 40, 28, 46), (14, 76, 28, 82), (20, 100, 32, 104)):          # складки
+            pygame.draw.line(s, shade(coat, -30), (x1, y1), (x2, y2), 2)
+        pygame.draw.rect(s, shade(coat, -28), (10, 120, 56, 10), border_radius=3)                  # подол/ремень
+        if kind == "mark":
+            for y in (28, 108):
+                pygame.draw.rect(s, (44, 60, 74), (4, y, 68, 8))                                    # светоотражающие полосы
+                pygame.draw.rect(s, (226, 214, 110), (4, y + 2, 68, 2))
+                pygame.draw.rect(s, (226, 214, 110), (4, y + 6, 68, 1))
+            pygame.draw.rect(s, (36, 52, 66), (46, 60, 20, 24), border_radius=3)                   # карман
+            pygame.draw.line(s, (26, 40, 52), (46, 66), (66, 66), 2)
+        if kind == "soldier":
+            pygame.draw.rect(s, (22, 28, 20), (14, 14, 52, 92), border_radius=10)                  # разгрузка
+            pygame.draw.rect(s, (52, 60, 46), (16, 16, 48, 88), border_radius=9)
+            for (x, y) in ((20, 70), (36, 70), (52, 70)):
+                pygame.draw.rect(s, (30, 36, 26), (x, y, 12, 22), border_radius=2)                  # подсумки
+                pygame.draw.rect(s, (84, 94, 70), (x + 1, y + 1, 10, 6), border_radius=1)
+            pygame.draw.rect(s, (36, 42, 32), (22, 24, 34, 34), border_radius=3)                    # пластина
+            pygame.draw.rect(s, (70, 78, 60), (24, 26, 30, 30), 1, border_radius=3)
+        if kind == "lena":
+            pygame.draw.ellipse(s, (214, 196, 168), (8, -2, 60, 26))                                # меховой капюшон
+            for k in range(14):
+                a = k * 0.45
+                pygame.draw.line(s, (240, 228, 206), (38 + math.cos(a) * 12, 11 + math.sin(a) * 6), (38 + math.cos(a) * 28, 11 + math.sin(a) * 10), 2)
+            pygame.draw.rect(s, (22, 70, 76), (14, 14, 48, 16), border_radius=7)                    # шарф
+            pygame.draw.rect(s, (40, 130, 138), (16, 16, 44, 12), border_radius=6)
+            pygame.draw.rect(s, (126, 86, 52), (40, 94, 28, 24), border_radius=4)                   # сумка на бедре
+            pygame.draw.rect(s, (176, 134, 84), (46, 98, 16, 6))
+    rig["torso"] = outlined(_part((76, 136), torso), (10, 8, 8), 2)
+    light_pass(rig["torso"], [(24, 36, 40, 54, 1), (62, 110, 34, 46, -1)])
+
+    # ---------------- рукав 28x124 (шарнир сверху по центру)
+    def arm(s):
+        sl = textured((28, 124), lambda m: pygame.draw.rect(m, MASK_W, (3, 0, 22, 96), border_radius=9), cf)
+        s.blit(sl, (0, 0))
+        pygame.draw.rect(s, shade(coat, -60), (3, 0, 22, 96), 2, border_radius=9)
+        pygame.draw.rect(s, shade(coat, -45), (3, 88, 22, 10), border_radius=3)                    # манжета
+        gl = (26, 26, 30) if kind != "lena" else (120, 80, 60)
+        pygame.draw.ellipse(s, (10, 10, 12), (2, 94, 24, 28))
+        pygame.draw.ellipse(s, gl, (4, 96, 20, 24))
+        pygame.draw.line(s, shade(gl, 50), (8, 100), (8, 114), 2)
+        pygame.draw.line(s, shade(coat, 28), (7, 8), (7, 84), 1)
+    rig["arm"] = outlined(_part((28, 124), arm), (10, 8, 8), 2)
+
+    # ---------------- нога 34x140 (шарнир сверху по центру); ботинок смотрит вправо
+    def leg(s):
+        pt = textured((34, 140), lambda m: pygame.draw.rect(m, MASK_W, (4, 0, 26, 114), border_radius=8), pf)
+        s.blit(pt, (0, 0))
+        pygame.draw.rect(s, shade(pants, -55), (4, 0, 26, 114), 2, border_radius=8)
+        for y in (40, 70):
+            pygame.draw.line(s, shade(pants, -35), (6, y), (28, y + 4), 2)                         # складки на колене
+        bt = [(3, 104), (29, 104), (30, 118), (40 - 6, 130), (34, 138), (2, 138)]
+        pygame.draw.polygon(s, (10, 10, 12), [(x, y) for x, y in bt])
+        pygame.draw.polygon(s, (34, 34, 38) if kind != "lena" else (88, 56, 36), [(x + (2 if x < 10 else -1), y + (2 if y < 120 else -3)) for x, y in bt])
+        pygame.draw.rect(s, (16, 16, 18), (2, 134, 32, 6))                                           # подошва
+        pygame.draw.line(s, (100, 100, 108), (6, 108), (26, 108), 1)
+        for k in range(3):
+            pygame.draw.line(s, (170, 170, 176), (10 + k * 5, 112 + k), (14 + k * 5, 115 + k), 1)   # шнуровка
+    rig["leg"] = outlined(_part((34, 140), leg), (10, 8, 8), 2)
+    light_pass(rig["leg"], [(14, 30, 16, 36, 1)])
+
+    # ---------------- автомат 220x56 (приклад слева, дуло справа)
+    if kind == "soldier":
+        def rifle(s):
+            K, M = (14, 14, 16), (52, 54, 60)
+            pygame.draw.polygon(s, K, [(2, 14), (46, 20), (46, 40), (8, 44), (2, 30)])                   # приклад
+            pygame.draw.polygon(s, M, [(5, 18), (44, 23), (44, 37), (10, 41), (5, 30)])
+            pygame.draw.rect(s, K, (44, 16, 70, 28), border_radius=4)                                    # ствольная коробка
+            pygame.draw.rect(s, M, (46, 18, 66, 22), border_radius=3)
+            pygame.draw.rect(s, (36, 38, 42), (56, 18, 20, 5))
+            pygame.draw.rect(s, K, (66, 4, 30, 14), border_radius=3)                                     # прицел
+            pygame.draw.rect(s, (40, 42, 48), (68, 6, 26, 9), border_radius=2)
+            pygame.draw.circle(s, (80, 180, 220), (93, 10), 4)
+            pygame.draw.rect(s, K, (112, 20, 70, 18), border_radius=3)                                   # цевьё
+            pygame.draw.rect(s, M, (114, 22, 66, 12), border_radius=2)
+            for x in range(120, 176, 9):
+                pygame.draw.line(s, (30, 32, 36), (x, 23), (x, 33), 2)
+            pygame.draw.rect(s, K, (180, 25, 34, 8))                                                     # ствол
+            pygame.draw.rect(s, (96, 98, 106), (182, 26, 30, 3))
+            pygame.draw.rect(s, K, (206, 21, 12, 16), border_radius=2)                                   # пламегаситель
+            pygame.draw.polygon(s, K, [(70, 40), (92, 40), (96, 56), (76, 56)])                          # магазин
+            pygame.draw.polygon(s, (60, 62, 68), [(73, 41), (90, 41), (92, 54), (78, 54)])
+            pygame.draw.line(s, (130, 134, 142), (50, 19), (108, 19), 1)
+        rig["rifle"] = outlined(_part((220, 58), rifle), (8, 8, 10), 2)
+
+    # ---------------- рюкзак (вид сбоку) 56x112
+    if kind in ("mark", "soldier"):
+        def pack(s):
+            col = (96, 72, 46) if kind == "mark" else (62, 72, 52)
+            t = textured((56, 112), lambda m: pygame.draw.rect(m, MASK_W, (4, 4, 48, 104), border_radius=12), make_fabric(col, 112))
+            s.blit(t, (0, 0))
+            pygame.draw.rect(s, shade(col, -60), (4, 4, 48, 104), 2, border_radius=12)
+            for y in (36, 60, 84):
+                pygame.draw.line(s, shade(col, -45), (6, y), (50, y), 2)
+            pygame.draw.rect(s, (186, 170, 110), (22, 22, 8, 8))
+        rig["pack"] = outlined(_part((56, 112), pack), (10, 8, 8), 2)
+        light_pass(rig["pack"], [(18, 30, 24, 40, 1)])
+    rig["flip"] = {k: pygame.transform.flip(v, True, False) for k, v in rig.items() if k != "flip"}
+    return rig
+
+_SCALED = {}
+
+def _scaled(surf, k):
+    """Уменьшенная копия запечённой части (кэш: масштабируем один раз, а не каждый кадр)."""
+    key = (id(surf), round(k, 3))
+    r = _SCALED.get(key)
+    if r is None:
+        r = _SCALED[key] = pygame.transform.rotozoom(surf, 0, k)
+    return r
+
+def _limb(scr, surf, pivot, ang_deg, k, anchor_y):
+    """Конечность на шарнире: surf висит вниз от pivot; ang_deg>0 отводит нижний конец вправо (против часовой)."""
+    r = pygame.transform.rotozoom(surf, ang_deg, k)
+    L = (surf.get_height() / 2.0 - anchor_y) * k
+    a = math.radians(ang_deg)
+    c = (pivot[0] + math.sin(a) * L, pivot[1] + math.cos(a) * L)
+    scr.blit(r, r.get_rect(center=(int(c[0]), int(c[1]))))
+
+def side_person_rig(scr, rig, x, gy, face, sc=1.0, walk=0.0, aim=None, hands_up=0.0, rifle=False, lean=0.0):
+    """Человек сбоку из запечённых частей. face=+1 вправо, -1 влево; aim 0..1 — автомат от опущенного до нацеленного."""
+    P = rig if face > 0 else rig["flip"]
     f = face
-    hip = (x + lean * 4, gy - 64 * sc)
-    sw = math.sin(walk) * 20 * sc
-    for sd, col in ((-1, shade(pants, -25)), (1, pants)):                      # ноги
-        foot = (x + f * sw * sd, gy - 4 * sc)
-        pygame.draw.line(scr, col, (int(hip[0]), int(hip[1])), (int(foot[0]), int(foot[1])), max(2, int(13 * sc)))
-        pygame.draw.rect(scr, (20, 20, 22), (int(foot[0] - 7 * sc + f * 4 * sc), int(gy - 9 * sc), int(18 * sc), int(9 * sc)), border_radius=3)
-    top = gy - 120 * sc
-    pygame.draw.rect(scr, shade(coat, -40), (int(x - 17 * sc + lean * 8), int(top - 2 * sc), int(34 * sc), int(64 * sc)), border_radius=8)
-    pygame.draw.rect(scr, coat, (int(x - 15 * sc + lean * 8), int(top), int(30 * sc), int(60 * sc)), border_radius=7)
-    hx, hy = x + f * 3 * sc + lean * 10, gy - 138 * sc                         # голова
-    if ponytail:
-        pygame.draw.line(scr, hair, (int(hx - f * 10 * sc), int(hy)), (int(hx - f * 20 * sc), int(hy + 24 * sc + math.sin(walk * 2) * 4)), max(2, int(7 * sc)))
-    pygame.draw.circle(scr, helmet if helmet else hair, (int(hx - f * 2 * sc), int(hy - 3 * sc)), max(3, int(15 * sc)))
-    pygame.draw.circle(scr, skin, (int(hx + f * 5 * sc), int(hy + 4 * sc)), max(3, int(10 * sc)))
-    pygame.draw.circle(scr, (20, 20, 24), (int(hx + f * 9 * sc), int(hy + 2 * sc)), 2)
-    shoulder = (x + f * 2 * sc + lean * 8, top + 12 * sc)
-    sleeve = shade(coat, -20)
-    if rifle:                                                                   # автомат: низкая стойка -> прицеливание
+    k = 0.5 * sc
+    hip = (x + lean * 4 * sc, gy - 66 * sc)
+    sw = math.sin(walk)
+    if "pack" in P:
+        pk = _scaled(P["pack"], k)
+        scr.blit(pk, pk.get_rect(center=(int(x - f * 24 * sc + lean * 6 * sc), int(gy - 96 * sc))))
+    for sd, order in ((-1, 0), (1, 1)):                                                      # ноги: задняя темнее
+        ang = math.degrees(math.asin(clamp(sw * 20 * sd / 66.0, -0.9, 0.9))) * f
+        _limb(scr, P["leg"], hip, ang, k, 12)
+    sh = (x + f * 2 * sc + lean * 8 * sc, gy - 108 * sc)
+    if not rifle:                                                                             # дальняя рука — за торсом
+        _limb(scr, P["arm"], sh, math.degrees(math.asin(clamp(sw * 14 / 62.0, -0.9, 0.9))) * f, k * 0.92, 10)
+    tor = _scaled(P["torso"], k)
+    scr.blit(tor, tor.get_rect(center=(int(x + lean * 8 * sc + f * 2 * sc), int(gy - 90 * sc))))
+    if rifle:
         a = (1.0 - (aim or 0.0)) * 0.95
         d = (f * math.cos(a), math.sin(a))
-        butt = (shoulder[0] - d[0] * 14 * sc, shoulder[1] - d[1] * 14 * sc + 6 * sc)
-        tip = (butt[0] + d[0] * 96 * sc, butt[1] + d[1] * 96 * sc)
-        pygame.draw.line(scr, (14, 14, 16), butt, tip, max(3, int(9 * sc)))
-        pygame.draw.line(scr, (44, 44, 50), butt, tip, max(2, int(6 * sc)))
-        m0 = (butt[0] + d[0] * 46 * sc, butt[1] + d[1] * 46 * sc)
-        pygame.draw.line(scr, (22, 22, 26), m0, (m0[0] + f * 5 * sc, m0[1] + 20 * sc), max(2, int(7 * sc)))
-        h1 = (butt[0] + d[0] * 22 * sc, butt[1] + d[1] * 22 * sc)
-        h2 = (butt[0] + d[0] * 62 * sc, butt[1] + d[1] * 62 * sc)
-        for hnd in (h1, h2):
-            pygame.draw.line(scr, sleeve, shoulder, hnd, max(2, int(9 * sc)))
-            pygame.draw.circle(scr, skin, (int(hnd[0]), int(hnd[1])), max(2, int(5 * sc)))
+        butt = (sh[0] - d[0] * 14 * sc, sh[1] - d[1] * 14 * sc + 6 * sc)
+        rf = P["rifle"]
+        r = pygame.transform.rotozoom(rf, -math.degrees(a) * f, k)
+        mid = (butt[0] + d[0] * 55 * sc, butt[1] + d[1] * 55 * sc)
+        scr.blit(r, r.get_rect(center=(int(mid[0]), int(mid[1]))))
+        for hnd in ((butt[0] + d[0] * 24 * sc, butt[1] + d[1] * 24 * sc), (butt[0] + d[0] * 64 * sc, butt[1] + d[1] * 64 * sc)):
+            dx, dy = hnd[0] - sh[0], hnd[1] - sh[1]
+            ang = math.degrees(math.atan2(dx, dy))
+            _limb(scr, P["arm"], sh, ang, k * clamp(math.hypot(dx, dy) / (62 * sc), 0.55, 1.2), 10)
     else:
         hu = hands_up
-        hand = (x + f * (8 + 34 * hu) * sc, top + (56 - 66 * hu) * sc + math.sin(walk) * 6 * sc * (1 - hu))
-        pygame.draw.line(scr, sleeve, shoulder, hand, max(2, int(10 * sc)))
-        pygame.draw.circle(scr, skin, (int(hand[0]), int(hand[1])), max(2, int(5 * sc)))
+        if hu > 0.05:                                                                         # ближняя рука поднята вперёд
+            hand = (sh[0] + f * (8 + 34 * hu) * sc, sh[1] + (48 - 66 * hu) * sc)
+            dx, dy = hand[0] - sh[0], hand[1] - sh[1]
+            _limb(scr, P["arm"], sh, math.degrees(math.atan2(dx, dy)), k * clamp(math.hypot(dx, dy) / (62 * sc), 0.55, 1.2), 10)
+        else:
+            _limb(scr, P["arm"], sh, math.degrees(math.asin(clamp(-sw * 14 / 62.0, -0.9, 0.9))) * f, k, 10)
+    hd = _scaled(P["head"], k)
+    scr.blit(hd, hd.get_rect(center=(int(x + f * 4 * sc + lean * 10 * sc), int(gy - 140 * sc))))
 
 
 def make_maw_texture():
-    """Череп чудовища сверху (смотрит вправо) для скримера: кожа с венами, трещины, глазницы, ноздри."""
+    """
+    Череп чудовища сверху (смотрит вправо, 380x280) для скримера: кожистая кость с венами и пятнами, швы и ветвящиеся трещины,
+    надбровья и скулы с объёмом, глубокие глазницы (красные глаза рисуются поверх них), ноздри, рваные раны со швами,
+    свет сверху-слева, тени вокруг глазниц, контур. Расположение глазниц и ноздрей не менять: на них опирается draw_jaws.
+    """
     W, H = 380, 280
-    tex = make_skin_texture(95, 70, (146, 136, 122), veins=14, vein=(104, 28, 46), spots=9, spot=(70, 80, 56))
-    skull = textured((W, H), lambda m: pygame.draw.ellipse(m, (255, 255, 255, 255), (0, 30, W, H - 60)), tex)
     rnd = random.Random(5)
-    for _ in range(8):
-        x, y = rnd.uniform(60, 300), rnd.uniform(60, 220)
-        pts = [(x, y)]
-        for _ in range(6):
-            x += rnd.uniform(-26, 26)
-            y += rnd.uniform(-26, 26)
-            pts.append((x, y))
-        pygame.draw.lines(skull, (40, 26, 24), False, pts, 2)
-    pygame.draw.ellipse(skull, (30, 18, 18), (0, 30, W, H - 60), 4)
-    for yy in (88, 192):                                       # глазницы с красным ободком
-        pygame.draw.ellipse(skull, (6, 0, 0), (240, yy - 24, 70, 48))
-        pygame.draw.ellipse(skull, (96, 12, 16), (240, yy - 24, 70, 48), 3)
-        pygame.draw.line(skull, (60, 40, 36), (226, yy - 34), (320, yy - 28), 3)    # надбровная дуга
+    bone = make_skin_texture(W, H, (176, 164, 140), veins=26, vein=(112, 30, 44), spots=22, spot=(96, 80, 62))
+    base = pygame.Surface((W, H), pygame.SRCALPHA)
+    sk = textured((W, H), lambda m: pygame.draw.ellipse(m, MASK_W, (0, 30, W, H - 60)), bone)
+    base.blit(sk, (0, 0))
+
+    def crack(x, y, ang, ln, wd):
+        """Ветвящаяся трещина: сужается и ветвится."""
+        if ln < 8 or wd < 1:
+            return
+        x2, y2 = x + math.cos(ang) * ln, y + math.sin(ang) * ln
+        pygame.draw.line(base, (34, 22, 20), (x, y), (x2, y2), wd)
+        pygame.draw.line(base, (214, 200, 172), (x + 1, y - 1), (x2 + 1, y2 - 1), 1)
+        crack(x2, y2, ang + rnd.uniform(-0.5, 0.5), ln * 0.72, wd if ln < 24 else wd - 1)
+        if rnd.random() < 0.55:
+            crack(x2, y2, ang + rnd.choice((-1, 1)) * rnd.uniform(0.6, 1.1), ln * 0.55, max(1, wd - 1))
+
+    # швы черепа: зигзаг вдоль оси и поперёк свода
+    sut = [(40 + k * 14, 140 + (6 if k % 2 else -6)) for k in range(12)]
+    pygame.draw.lines(base, (52, 38, 32), False, sut, 3)
+    pygame.draw.lines(base, (200, 186, 158), False, [(x, y + 2) for x, y in sut], 1)
+    sut2 = [(150 + (5 if k % 2 else -5), 56 + k * 14) for k in range(14)]
+    pygame.draw.lines(base, (52, 38, 32), False, sut2, 3)
+    pygame.draw.lines(base, (200, 186, 158), False, [(x + 2, y) for x, y in sut2], 1)
+    for (x, y, a, ln) in ((100, 80, 0.7, 54), (110, 210, -0.6, 50), (210, 130, 3.6, 40), (60, 120, 2.2, 46), (190, 236, -1.9, 36)):
+        crack(x, y, a, ln, 3)
+    # кожистые складки
+    for (cx, cy, rw, rh, a0, a1) in ((120, 100, 60, 34, 3.3, 5.9), (130, 190, 66, 36, 0.4, 2.9), (260, 140, 40, 60, -1.3, 1.3)):
+        pygame.draw.arc(base, (96, 76, 62), (cx - rw, cy - rh, rw * 2, rh * 2), a0, a1, 3)
+    # рваные раны с мышцей и швами
+    for (cx, cy, rw, rh) in ((80, 84, 34, 22), (92, 200, 28, 18)):
+        pygame.draw.polygon(base, (58, 12, 16), jag_poly(cx, cy, rw + 5, rh + 5, 14, 0.2, rnd))
+        pygame.draw.polygon(base, (136, 28, 34), jag_poly(cx, cy, rw, rh, 12, 0.1, rnd))
+        for k in range(-rw + 4, rw - 3, 5):
+            pygame.draw.line(base, (88, 14, 22), (cx + k, cy - rh + 4), (cx + k + 2, cy + rh - 4), 2)
+            pygame.draw.line(base, (176, 60, 64), (cx + k + 1, cy - rh + 5), (cx + k + 3, cy + rh - 6), 1)
+        for k in range(-rw + 6, rw - 4, 9):
+            pygame.draw.line(base, (20, 14, 12), (cx + k, cy - rh - 3), (cx + k + 2, cy + rh + 3), 2)       # швы
+        pygame.draw.ellipse(base, (248, 196, 188), (cx - rw // 2, cy - rh // 2, 10, 5))                     # влажный блик
+    # надбровья и скулы: толстые дуги с тенью и бликом
+    for yy, sgn in ((88, 1), (192, -1)):
+        pygame.draw.arc(base, (60, 44, 36), (214, yy - 40, 118, 62), 0.2 if sgn > 0 else -2.9, 2.9 if sgn > 0 else -0.2, 7)
+        pygame.draw.arc(base, (222, 208, 180), (216, yy - 38, 114, 58), 0.3 if sgn > 0 else -2.8, 2.8 if sgn > 0 else -0.3, 3)
+    # глазницы (положение и размер сохраняются!)
+    for yy in (88, 192):
+        pygame.draw.ellipse(base, (52, 30, 26), (234, yy - 29, 82, 58))                                     # скос кости вокруг
+        pygame.draw.ellipse(base, (6, 0, 0), (240, yy - 24, 70, 48))
+        pygame.draw.ellipse(base, (96, 12, 16), (240, yy - 24, 70, 48), 3)
+        pygame.draw.arc(base, (226, 212, 186), (236, yy - 28, 78, 56), 3.4, 5.4, 2)                          # блик на кромке
+        pygame.draw.arc(base, (30, 8, 8), (244, yy - 20, 62, 40), 0.3, 2.9, 3)
+    # носовая кость и ноздри
+    pygame.draw.polygon(base, (40, 28, 24), [(300, 130), (356, 136), (356, 144), (300, 150)])
+    pygame.draw.polygon(base, (214, 200, 172), [(300, 133), (352, 138), (352, 141), (300, 146)])
     for yy in (126, 154):
-        pygame.draw.line(skull, (24, 12, 12), (350, yy), (372, 140), 4)             # ноздри
-    for (x, y) in ((90, 100), (120, 190), (200, 140)):                               # влажные блики
-        pygame.draw.ellipse(skull, (232, 228, 210), (x, y, 26, 10))
-    return skull
+        pygame.draw.line(base, (10, 4, 4), (350, yy), (372, 140), 5)
+        pygame.draw.line(base, (120, 40, 40), (350, yy + (2 if yy < 140 else -2)), (368, 140), 1)
+    pygame.draw.ellipse(base, (22, 12, 10), (0, 30, W, H - 60), 4)
+    clip = pygame.Surface((W, H), pygame.SRCALPHA)                      # всё, что вылезло за силуэт черепа (трещины, швы), срезается
+    pygame.draw.ellipse(clip, (255, 255, 255, 255), (0, 30, W, H - 60))
+    base.blit(clip, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    light_pass(base, [(120, 80, 96, 66, 1), (200, 126, 50, 40, 1), (110, 200, 52, 30, 1),
+                      (275, 88, 54, 70, -1), (275, 192, 54, 70, -1), (330, 230, 80, 50, -1), (60, 230, 70, 44, -1), (350, 140, 30, 40, -1)])
+    return outlined(base, (14, 8, 8), 4)
 
 
 def radial_surface(radius, power):
@@ -955,7 +1520,7 @@ class SoundBank:
                                               * (0.35 + 0.65 * math.exp(-((t * 4) % 1.0) * 4))
                                               + 0.22 * math.sin(tau * 233 * t) * math.sin(tau * 0.25 * t) ** 2
                                               + 0.20 * math.sin(tau * 247 * t) * math.sin(tau * 0.25 * t + 1.0) ** 2
-                                              + 0.25 * random.uniform(-1, 1) * (1.0 if (t * 8) % 1.0 < 0.08 else 0.0), 0.5)
+                                              + 0.25 * random.uniform(-1, 1) * (min(1.0, ((t * 8) % 1.0) * 40) if (t * 8) % 1.0 < 0.08 else 0.0), 0.5)
         # ================== САУНДТРЕК: зацикленные дорожки (длины подобраны так, чтобы петля не щёлкала) ==================
         if progress:
             progress("ЗАГРУЗКА...  музыка")
@@ -2080,80 +2645,13 @@ class Textures:
         self.glow_note = make_glow(22, (170, 200, 255), 130)
         self.dust_sprites = [make_glow(r, (165, 156, 142), 120) for r in (30, 48, 70)]
         report("ЗАГРУЗКА...  персонажи")
-        self.player_base = self.make_player_base()
-        self.monster_base = self.make_monster_base()
+        self.player_hi = make_player_hi()                   # 128 px: для крупных планов
+        self.player_base = pygame.transform.smoothscale(self.player_hi, (64, 64))      # игровой размер (сглажен усреднением)
+        self.monster_hi = make_monster_hi()                 # 224 px
+        self.monster_base = pygame.transform.smoothscale(self.monster_hi, (112, 112))
+        self.persons = {k: make_person_hi(k) for k in PERSONS}      # люди сверху: солдат, Лена, учёный, Кесслер, охранник
+        self.rigs = {k: make_side_rig(k) for k in ("mark", "lena", "soldier")}   # боковые фигуры для кат-сцен
 
-    def make_player_base(self):
-        """Игрок сверху (смотрит вправо): рюкзак, куртка из ткани с нашивками, вязаная шапка. Рисуется один раз."""
-        S, W = 64, (255, 255, 255, 255)
-        base = pygame.Surface((S, S), pygame.SRCALPHA)
-        pack = textured((S, S), lambda m: pygame.draw.rect(m, W, (7, 19, 17, 26), border_radius=5), make_fabric((92, 66, 42)))
-        base.blit(pack, (0, 0))
-        pygame.draw.rect(base, (44, 30, 18), (7, 19, 17, 26), 1, border_radius=5)
-        pygame.draw.line(base, (60, 42, 26), (10, 25), (22, 25), 1)
-        pygame.draw.line(base, (60, 42, 26), (10, 39), (22, 39), 1)
-        pygame.draw.rect(base, (170, 150, 90), (13, 30, 5, 4))
-        jacket = textured((S, S), lambda m: pygame.draw.ellipse(m, W, (17, 9, 32, 46)), make_fabric((46, 68, 84)))
-        base.blit(jacket, (0, 0))
-        pygame.draw.ellipse(base, (18, 26, 34), (17, 9, 32, 46), 2)
-        for yy in (14, 46):                                           # нашивки со световозвращающей полосой
-            pygame.draw.rect(base, (36, 54, 68), (27, yy, 14, 4), border_radius=2)
-            pygame.draw.line(base, (210, 200, 110), (29, yy + 2), (39, yy + 2), 1)
-        pygame.draw.line(base, (24, 36, 46), (20, 32), (46, 32), 1)
-        pygame.draw.circle(base, (24, 36, 46), (33, 32), 11, 1)
-        pygame.draw.circle(base, (30, 18, 16), (37, 32), 10)
-        beanie = textured((S, S), lambda m: pygame.draw.circle(m, W, (37, 32), 9), make_fabric((138, 44, 40)))
-        base.blit(beanie, (0, 0))
-        for a in range(0, 360, 24):                                   # рубчик вязки
-            ca, sa = math.cos(math.radians(a)), math.sin(math.radians(a))
-            pygame.draw.line(base, (96, 28, 28), (37 + ca * 3, 32 + sa * 3), (37 + ca * 9, 32 + sa * 9), 1)
-        pygame.draw.circle(base, (186, 150, 130), (37, 32), 3)
-        pygame.draw.circle(base, (212, 180, 160), (36, 31), 1)
-        for yy in (21, 43):
-            pygame.draw.circle(base, (196, 164, 138), (36, yy), 2)
-        return base
-
-    def make_monster_base(self):
-        """Тело и череп монстра (смотрит вправо): кожа с венами, мышцы без кожи, рёбра, позвонки, рана со швами."""
-        S, W = 112, (255, 255, 255, 255)
-        base = pygame.Surface((S, S), pygame.SRCALPHA)
-        flesh = make_skin_texture(S, S, (140, 126, 116), veins=10, vein=(112, 28, 36), spots=9, spot=(66, 52, 48))
-        neck = textured((S, S), lambda m: pygame.draw.ellipse(m, W, (60, 46, 22, 20)), flesh)
-        base.blit(neck, (0, 0))
-        torso = textured((S, S), lambda m: pygame.draw.ellipse(m, W, (24, 22, 54, 68)), flesh)
-        base.blit(torso, (0, 0))
-        pygame.draw.ellipse(base, (28, 14, 14), (24, 22, 54, 68), 3)
-        for (cx, cy, rw, rh) in ((46, 38, 11, 7), (60, 74, 12, 8), (38, 66, 8, 6)):     # мышцы без кожи
-            pygame.draw.ellipse(base, (118, 24, 30), (cx - rw, cy - rh, rw * 2, rh * 2))
-            for k in range(-rw + 2, rw - 1, 3):
-                pygame.draw.line(base, (82, 14, 20), (cx + k, cy - rh + 2), (cx + k + 1, cy + rh - 2), 1)
-            pygame.draw.ellipse(base, (50, 8, 12), (cx - rw, cy - rh, rw * 2, rh * 2), 1)
-            pygame.draw.circle(base, (236, 170, 160), (cx - rw // 2, cy - rh // 2), 1)    # влажный блик
-        for i in range(8):                                                                 # рёбра и позвонки
-            x = 30 + i * 6
-            pygame.draw.line(base, (86, 66, 58), (x, 56), (x - 3, 31 + (i % 3)), 2)
-            pygame.draw.line(base, (86, 66, 58), (x, 56), (x - 3, 81 - (i % 3)), 2)
-            pygame.draw.line(base, (196, 186, 164), (x + 1, 55), (x - 2, 32 + (i % 3)), 1)
-            pygame.draw.line(base, (196, 186, 164), (x + 1, 57), (x - 2, 80 - (i % 3)), 1)
-            pygame.draw.circle(base, (24, 16, 14), (x + 1, 57), 3)
-            pygame.draw.circle(base, (222, 212, 188), (x, 56), 3)
-        pygame.draw.polygon(base, (70, 10, 14), [(52, 60), (60, 56), (68, 60), (66, 70), (56, 72)])   # рана
-        pygame.draw.polygon(base, (130, 28, 34), [(55, 62), (60, 59), (65, 62), (63, 68), (57, 69)])
-        for k in range(4):                                                                 # швы поперёк раны
-            pygame.draw.line(base, (20, 14, 12), (54 + k * 4, 57), (55 + k * 4, 72), 1)
-            pygame.draw.line(base, (20, 14, 12), (53 + k * 4, 61), (57 + k * 4, 65), 1)
-        bone = make_skin_texture(40, 32, (206, 198, 174), veins=3, vein=(120, 100, 90), spots=4, spot=(120, 100, 80))
-        skull = textured((S, S), lambda m: pygame.draw.ellipse(m, W, (66, 42, 38, 28)), bone)
-        base.blit(skull, (0, 0))
-        pygame.draw.ellipse(base, (40, 28, 26), (66, 42, 38, 28), 2)
-        for (x1, y1, x2, y2) in ((72, 46, 80, 52), (96, 50, 90, 58), (76, 66, 84, 60)):       # трещины черепа
-            pygame.draw.line(base, (60, 44, 38), (x1, y1), (x2, y2), 1)
-        for yy in (47, 59):                                                                # глазницы
-            pygame.draw.ellipse(base, (6, 0, 0), (82, yy - 4, 14, 10))
-            pygame.draw.ellipse(base, (90, 12, 14), (82, yy - 4, 14, 10), 1)
-        pygame.draw.line(base, (30, 18, 16), (100, 54), (103, 56), 2)                       # ноздри
-        pygame.draw.line(base, (30, 18, 16), (100, 58), (103, 56), 2)
-        return base
 
 
 class Atmosphere:
@@ -2952,38 +3450,49 @@ class SpriteRenderer:
         self.exit_label = self.text.f_small.render("ВЫХОД", True, (210, 220, 210))
 
 
-    def draw_player(self, sx, sy, target=None):
-        """Игрок: текстурный корпус (рюкзак, куртка, шапка), шагающие ноги в ботинках, рукава, перчатки, фонарик, пистолет."""
+    def draw_player(self, sx, sy, target=None, zoom=1.0):
+        """
+        Игрок: текстурный корпус (рюкзак, куртка, шапка), шагающие ноги в ботинках, рукава, перчатки, фонарик, пистолет.
+        zoom > 1 — крупный план (скример, схватка): все размеры растут, корпус берётся из текстуры высокого разрешения.
+        """
+        z = zoom
+        w = lambda v: max(1, int(round(v * z)))
         p, scr = self.s.player, (self.screen if target is None else target)
         ca, sa = math.cos(p.angle), math.sin(p.angle)
         px, py = -sa, ca
         moving = p.moving and not self.s.hidden
         bob = math.sin(self.clock.t * (19 if p.sprinting else 11)) if moving else 0.0
-        pygame.draw.circle(scr, (10, 10, 12), (sx + 2, sy + 3), 13)
+        pygame.draw.circle(scr, (10, 10, 12), (sx + 2 * z, sy + 3 * z), 13 * z)
         for side in (-1, 1):                                       # ботинки: шаг вперёд-назад
-            sw = bob * 7 * side
-            fx, fy = sx + px * 5 * side + ca * sw, sy + py * 5 * side + sa * sw
-            pygame.draw.circle(scr, (16, 18, 22), (fx, fy), 4.5)
-            pygame.draw.circle(scr, (46, 50, 58), (fx + ca * 1.5, fy + sa * 1.5), 3)
-            pygame.draw.circle(scr, (92, 98, 108), (fx + ca * 2.4 - 0.6, fy + sa * 2.4 - 0.6), 1)
-        body = pygame.transform.rotozoom(self.tex.player_base, -math.degrees(p.angle), 0.62 * (1 + 0.025 * abs(bob)))
+            sw = bob * 7 * side * z
+            fx, fy = sx + px * 5 * side * z + ca * sw, sy + py * 5 * side * z + sa * sw
+            pygame.draw.circle(scr, (16, 18, 22), (fx, fy), 4.5 * z)
+            pygame.draw.circle(scr, (46, 50, 58), (fx + ca * 1.5 * z, fy + sa * 1.5 * z), 3 * z)
+            pygame.draw.circle(scr, (92, 98, 108), (fx + ca * 2.4 * z - 0.6 * z, fy + sa * 2.4 * z - 0.6 * z), max(1.0, 1 * z))
+        breath = 1 + 0.025 * abs(bob)
+        tex, kk = (self.tex.player_hi, 0.31 * z * breath) if z > 1.5 else (self.tex.player_base, 0.62 * z * breath)
+        body = pygame.transform.rotozoom(tex, -math.degrees(p.angle), kk)
         scr.blit(body, body.get_rect(center=(int(sx), int(sy))))
-        hx, hy = sx + ca * 15 + px * 6 + ca * bob * 1.5, sy + sa * 15 + py * 6 + sa * bob * 1.5
-        pygame.draw.line(scr, (22, 34, 44), (sx + px * 8, sy + py * 8), (hx, hy), 6)           # рукав с фонариком
-        pygame.draw.line(scr, (52, 78, 96), (sx + px * 8, sy + py * 8 - 0.8), (hx, hy - 0.8), 3)
-        pygame.draw.circle(scr, (26, 26, 30), (hx, hy), 3.5)                                    # перчатка
+        hx, hy = sx + ca * 15 * z + px * 6 * z + ca * bob * 1.5 * z, sy + sa * 15 * z + py * 6 * z + sa * bob * 1.5 * z
+        pygame.draw.line(scr, (22, 34, 44), (sx + px * 8 * z, sy + py * 8 * z), (hx, hy), w(6))           # рукав с фонариком
+        pygame.draw.line(scr, (52, 78, 96), (sx + px * 8 * z, sy + py * 8 * z - 0.8 * z), (hx, hy - 0.8 * z), w(3))
+        if z > 1.5:                                                # на крупном плане: светоотражающая полоса и манжета
+            mx, my = sx + (hx - sx) * 0.55 + px * 8 * z * 0.45, sy + (hy - sy) * 0.55 + py * 8 * z * 0.45
+            pygame.draw.line(scr, (226, 214, 110), (mx - px * 3 * z, my - py * 3 * z), (mx + px * 3 * z, my + py * 3 * z), w(1.6))
+            pygame.draw.line(scr, (14, 22, 30), (hx - px * 3.4 * z, hy - py * 3.4 * z), (hx + px * 3.4 * z, hy + py * 3.4 * z), w(1.4))
+        pygame.draw.circle(scr, (26, 26, 30), (hx, hy), 3.5 * z)                                       # перчатка
         lit = p.light_on and p.battery > 0
-        pygame.draw.line(scr, (44, 46, 52), (hx, hy), (hx + ca * 8, hy + sa * 8), 5)             # корпус фонаря
-        pygame.draw.line(scr, (96, 100, 108), (hx, hy - 1), (hx + ca * 8, hy + sa * 8 - 1), 1)
-        pygame.draw.circle(scr, (255, 244, 200) if lit else (80, 80, 76), (hx + ca * 9, hy + sa * 9), 3)  # линза
+        pygame.draw.line(scr, (44, 46, 52), (hx, hy), (hx + ca * 8 * z, hy + sa * 8 * z), w(5))          # корпус фонаря
+        pygame.draw.line(scr, (96, 100, 108), (hx, hy - z), (hx + ca * 8 * z, hy + sa * 8 * z - z), w(1))
+        pygame.draw.circle(scr, (255, 244, 200) if lit else (80, 80, 76), (hx + ca * 9 * z, hy + sa * 9 * z), 3 * z)  # линза
         if self.s.has_gun:                                         # пистолет во второй руке
-            gx0, gy0 = sx - px * 8, sy - py * 8
-            gx1, gy1 = sx - px * 4 + ca * 19, sy - py * 4 + sa * 19
-            pygame.draw.line(scr, (22, 34, 44), (gx0, gy0), (sx - px * 4 + ca * 11, sy - py * 4 + sa * 11), 6)
-            pygame.draw.circle(scr, (26, 26, 30), (sx - px * 4 + ca * 11, sy - py * 4 + sa * 11), 3.5)
-            pygame.draw.line(scr, (18, 18, 22), (sx - px * 4 + ca * 10, sy - py * 4 + sa * 10), (gx1, gy1), 5)
-            pygame.draw.line(scr, (120, 120, 128), (gx1 - ca * 3, gy1 - sa * 3), (gx1 + ca * 5, gy1 + sa * 5), 3)
-            pygame.draw.line(scr, (170, 170, 178), (sx - px * 4 + ca * 10, sy - py * 4 + sa * 10 - 1), (gx1, gy1 - 1), 1)
+            gx0, gy0 = sx - px * 8 * z, sy - py * 8 * z
+            gx1, gy1 = sx - px * 4 * z + ca * 19 * z, sy - py * 4 * z + sa * 19 * z
+            pygame.draw.line(scr, (22, 34, 44), (gx0, gy0), (sx - px * 4 * z + ca * 11 * z, sy - py * 4 * z + sa * 11 * z), w(6))
+            pygame.draw.circle(scr, (26, 26, 30), (sx - px * 4 * z + ca * 11 * z, sy - py * 4 * z + sa * 11 * z), 3.5 * z)
+            pygame.draw.line(scr, (18, 18, 22), (sx - px * 4 * z + ca * 10 * z, sy - py * 4 * z + sa * 10 * z), (gx1, gy1), w(5))
+            pygame.draw.line(scr, (120, 120, 128), (gx1 - ca * 3 * z, gy1 - sa * 3 * z), (gx1 + ca * 5 * z, gy1 + sa * 5 * z), w(3))
+            pygame.draw.line(scr, (170, 170, 178), (sx - px * 4 * z + ca * 10 * z, sy - py * 4 * z + sa * 10 * z - z), (gx1, gy1 - z), w(1))
 
     def draw_pickups(self, camx, camy):
         scr, t = self.screen, self.clock.t
@@ -3091,13 +3600,9 @@ class SpriteRenderer:
         for n in s.npcs:                                   # аванпост: солдаты на постах и Лена у рации
             x, y = n["x"] - camx, n["y"] - camy + math.sin(t * 1.4 + n["x"]) * 1.2
             if -50 < x < SW + 50 and -50 < y < SH + 50:
-                if n["kind"] == "lena":
-                    draw_figure(scr, x, y, (190, 130, 70), 1.0, hair=(96, 60, 36))
-                    pygame.draw.circle(scr, (96, 60, 36), (int(x - 10), int(y + 4)), 4)
-                else:
-                    draw_figure(scr, x, y, (70, 86, 60), 1.0, hair=(54, 66, 46))
-                    pygame.draw.line(scr, (14, 14, 16), (int(x), int(y + 8)),
-                                     (int(x + math.cos(n["ang"]) * 30), int(y + 8 + math.sin(n["ang"]) * 30)), 5)
+                if "spr" not in n:                                       # повёрнутую текстуру считаем один раз
+                    n["spr"] = pygame.transform.rotozoom(self.tex.persons[n["kind"]], -math.degrees(n["ang"]), 0.46)
+                scr.blit(n["spr"], n["spr"].get_rect(center=(int(x), int(y))))
         if s.console_cell is not None:
             x, y = (s.console_cell[0] + 0.5) * TILE - camx, (s.console_cell[1] + 0.5) * TILE - camy
             if -60 < x < SW + 60 and -60 < y < SH + 60:
@@ -4328,7 +4833,7 @@ class JumpscareRenderer:
         self.screamed = False
         self.chomped = False
         self.maw_tex = make_maw_texture()
-        self.tmp_p = pygame.Surface((90, 90), pygame.SRCALPHA)
+        self.tmp_p = pygame.Surface((270, 270), pygame.SRCALPHA)
         rnd = random.Random(9)
         self.teeth = [(rnd.uniform(0.7, 1.4), rnd.uniform(0.8, 1.25)) for _ in range(12)]
         self.drops = [(rnd.uniform(0, 6.283), rnd.uniform(120, 560), rnd.uniform(4, 15)) for _ in range(80)]   # брызги крови
@@ -4615,8 +5120,8 @@ class JumpscareRenderer:
             pl = self.s.player
             pl.angle, pl.moving, pl.sprinting, pl.light_on = self.ang + math.pi + math.sin(u * 38) * 0.9, True, True, True
             self.tmp_p.fill((0, 0, 0, 0))
-            self.sprites.draw_player(45, 45, self.tmp_p)
-            big = pygame.transform.rotozoom(self.tmp_p, math.sin(u * 30) * 25 * (1 - pull), 3.0)
+            self.sprites.draw_player(135, 135, self.tmp_p, zoom=3.0)
+            big = pygame.transform.rotozoom(self.tmp_p, math.sin(u * 30) * 25 * (1 - pull), 1.0)
             w2, h2 = big.get_size()
             st = pygame.transform.smoothscale(big, (max(2, int(w2 * (1 + 0.55 * pull))), max(2, int(h2 * (1 - 0.25 * pull)))))
             jx, jy = random.uniform(-5, 5) * (1 + 2 * pull), random.uniform(-5, 5) * (1 + 2 * pull)
@@ -5478,7 +5983,7 @@ class StruggleRenderer:
         self.struggle = struggle
         self.tex = tex
         self.text = text
-        self.tmp_p = pygame.Surface((90, 90), pygame.SRCALPHA)
+        self.tmp_p = pygame.Surface((270, 270), pygame.SRCALPHA)
         self.bg = None
         self.ang = 0.0
 
@@ -5510,9 +6015,9 @@ class StruggleRenderer:
         pl = self.s.player                                    # герой бьётся в когтях
         pl.angle, pl.moving, pl.sprinting, pl.light_on = self.ang + math.pi + math.sin(st.t * 38) * (0.9 - 0.6 * prog), True, True, True
         self.tmp_p.fill((0, 0, 0, 0))
-        self.sprites.draw_player(45, 45, self.tmp_p)
+        self.sprites.draw_player(135, 135, self.tmp_p, zoom=3.0)
         pull = (0.25 + 0.6 * (1.0 - prog)) * (1.0 - fr)
-        big = pygame.transform.rotozoom(self.tmp_p, math.sin(st.t * 30) * 20, 3.0)
+        big = pygame.transform.rotozoom(self.tmp_p, math.sin(st.t * 30) * 20, 1.0)
         w2, h2 = big.get_size()
         held = pygame.transform.smoothscale(big, (max(2, int(w2 * (1 + 0.5 * pull))), max(2, int(h2 * (1 - 0.2 * pull)))))
         hp = (P[0] + ox + random.uniform(-5, 5) * (0.5 + pull) + f[0] * 120 * fr, P[1] + oy + random.uniform(-5, 5) * (0.5 + pull) + f[1] * 120 * fr)
@@ -5640,8 +6145,10 @@ class PrologueRenderer:
         g.set_alpha(255)
 
     def figure(self, x, y, coat, size=1.0):
-        """Человек сверху: плечи, голова, волосы."""
-        draw_figure(self.screen, x, y, coat, size)
+        """Человек сверху: подбирается текстура по цвету одежды (халат — учёный, чёрный костюм — Кесслер, тёмно-серая форма — охрана)."""
+        kind = min(PERSONS, key=lambda k_: sum(abs(a - b) for a, b in zip(PERSONS[k_]["coat"], coat)))
+        spr = pygame.transform.rotozoom(self.tex.persons[kind], -math.degrees(math.atan2(SH / 2 - y, SW / 2 - x)), 0.5 * size)
+        self.screen.blit(spr, spr.get_rect(center=(int(x), int(y))))
 
     def tank(self, cx, cy, u, cracks=0.0, broken=False, grow=1.0):
         """Стеклянный резервуар с образцом №13 (светящееся зелёное существо)."""
@@ -5650,7 +6157,7 @@ class PrologueRenderer:
             pygame.draw.circle(scr, (30, 36, 38), (cx, cy), 162)
             pygame.draw.circle(scr, (84, 96, 98), (cx, cy), 154)
             pygame.draw.circle(scr, (14, 54, 42), (cx, cy), 142)
-        spr = pygame.transform.rotozoom(self.tex.monster_base, -90 + math.sin(u * 1.2) * 10, 1.5 * grow)
+        spr = pygame.transform.rotozoom(self.tex.monster_hi, -90 + math.sin(u * 1.2) * 10, 0.75 * grow)
         if not broken:
             spr.fill((70, 200, 150, 255), special_flags=pygame.BLEND_RGBA_MULT)
             spr.set_alpha(175)
@@ -5711,7 +6218,7 @@ class PrologueRenderer:
         pygame.draw.rect(scr, (24, 26, 30), (cx - 230, cy - 90, 460, 190))
         pygame.draw.rect(scr, (214, 218, 222), (cx - 226, cy - 94, 452, 182))
         pygame.draw.rect(scr, (140, 146, 152), (cx - 226, cy - 94, 452, 182), 3)
-        mark = pygame.transform.rotozoom(self.tex.player_base, 90, 1.9)
+        mark = pygame.transform.rotozoom(self.tex.player_hi, 90, 0.95)
         scr.blit(mark, mark.get_rect(center=(cx - 10, cy)))
         k = clamp((u - 0.8) / 2.4, 0.0, 1.0)                                        # шприц подъезжает к плечу
         sx, sy = cx + 250 - 230 * k, cy - 190 + 125 * k
@@ -5970,7 +6477,7 @@ class CinematicRenderer:
         n = 3 + int(fall * 7.99)
         blink = u < 1.25 and int(t * 4) % 2 == 0
         tx.draw_text(tx.f_big, "-%d" % n, (255, 50, 40) if not blink else (120, 20, 20), (int(cx), cable_top + 40), True, False)
-        pl = pygame.transform.rotozoom(self.tex.player_base, -90 + math.sin(t * 18) * 8 * fall, 1.7)
+        pl = pygame.transform.rotozoom(self.tex.player_hi, -90 + math.sin(t * 18) * 8 * fall, 0.85)
         scr.blit(pl, pl.get_rect(center=(int(cx), cable_top + 220)))
         if u > 1.0:                                                # мигающий свет, к концу — полная темнота
             self.flash((0, 0, 0), random.choice((0, 0, 40, 90, 160)) if u < 6.0 else 235)
@@ -6004,7 +6511,7 @@ class CinematicRenderer:
                 pygame.draw.circle(scr, (255, 245, 200), (int(sp[0]), int(sp[1])), 3)
             k = clamp((u - 1.0) / 1.6, 0.0, 1.0)                                                           # герой убегает и прячется
             px, py = C[0] - 70 + (150 - C[0] + 70) * k, C[1] + 110 + (SH - 150 - C[1] - 110) * k
-            hero = pygame.transform.rotozoom(self.tex.player_base, 150 if k < 1 else 200, 1.5)
+            hero = pygame.transform.rotozoom(self.tex.player_hi, 150 if k < 1 else 200, 0.75)
             scr.blit(hero, hero.get_rect(center=(int(px), int(py))))
         else:
             beam_k = clamp(t2 / 1.2, 0.0, 1.0)
@@ -6046,7 +6553,7 @@ class CinematicRenderer:
         for j in range(4):                                                  # тень лопастей
             a = t * 22 + j * math.pi / 2
             pygame.draw.line(scr, (34, 34, 38), C, (int(C[0] + math.cos(a) * 430 * k), int(C[1] + math.sin(a) * 430 * k)), int(10 + 14 * k))
-        hero = pygame.transform.rotozoom(self.tex.player_base, 20 * math.sin(t * 6), 1.6)
+        hero = pygame.transform.rotozoom(self.tex.player_hi, 20 * math.sin(t * 6), 0.8)
         scr.blit(hero, hero.get_rect(center=(C[0] + int(math.sin(t * 9) * 3), C[1] + 10)))
         if u > 3.2:                                                         # солдаты сбегаются со всех сторон
             m = clamp((u - 3.2) / 2.2, 0.0, 1.0)
@@ -6067,10 +6574,10 @@ class CinematicRenderer:
         self.flash((0, 0, 0), 150)
         g = clamp(u / 5.0, 0.0, 1.0)
         k = clamp((u - 1.6) / 2.4, 0.0, 1.0)                                # 0 — человек, 1 — монстр
-        hero = pygame.transform.rotozoom(self.tex.player_base, math.sin(t * 22) * 12 * (1 - k), 2.4)
+        hero = pygame.transform.rotozoom(self.tex.player_hi, math.sin(t * 22) * 12 * (1 - k), 1.2)
         hero.set_alpha(int(clamp(255 * (1 - k), 0, 255)))
         scr.blit(hero, hero.get_rect(center=C))
-        mon = pygame.transform.rotozoom(self.tex.monster_base, 0, 1.4 + 1.1 * k)
+        mon = pygame.transform.rotozoom(self.tex.monster_hi, 0, 0.7 + 0.55 * k)
         mon.set_alpha(int(clamp(255 * k, 0, 255)))
         scr.blit(mon, mon.get_rect(center=C))
         for i in range(26):                                                  # вены
@@ -6131,8 +6638,8 @@ class CinematicRenderer:
             pygame.draw.ellipse(scr, (74, 70, 48), pygame.Rect(int(cx - 110 - 330 * op), gy - 8, int(330 * op + 110), 30))
         hx_ = cx if u < 9.8 else cx - 100 * clamp((u - 9.8) / 1.4, 0.0, 1.0)         # Марк: в кабине, затем выходит
         if 4.6 <= u < 12.0:                                                          # дальше Марк идёт следом за Леной (рисуется ниже)
-            side_person(scr, hx_, gy, -1, (46, 68, 84), (34, 38, 52), 1.0, helmet=(138, 44, 40),
-                        walk=t * 8 if u > 9.8 and u < 11.2 else 0.0, hands_up=0.45 if 5.8 <= u < 9.4 else 0.0)
+            side_person_rig(scr, self.tex.rigs["mark"], hx_, gy, -1, 1.0, walk=t * 8 if u > 9.8 and u < 11.2 else 0.0,
+                            hands_up=0.45 if 5.8 <= u < 9.4 else 0.0)
         pw = int(110 * (1 - op))
         for x0 in (cx - 110, cx + 110 - pw):                                        # створки дверей
             pygame.draw.rect(scr, (108, 114, 120), (x0, 210, pw, gy - 210))
@@ -6144,8 +6651,8 @@ class CinematicRenderer:
         aim = clamp((u - 3.3) / 0.6, 0.0, 1.0) * (1.0 - clamp((u - 8.8) / 0.9, 0.0, 1.0))   # автоматы: вскинуты -> опущены
         jolt = 1.0 if 3.0 <= u < 3.7 else 0.0
         for sx, sw_ in ((400, 0.0), (510, 1.7)):
-            side_person(scr, sx, gy, 1, (70, 86, 60), (52, 62, 46), 1.0, helmet=(54, 66, 46), rifle=True, aim=aim,
-                        lean=0.35 * jolt + 0.25 * aim + 0.1 * math.sin(t * 1.3 + sw_))
+            side_person_rig(scr, self.tex.rigs["soldier"], sx, gy, 1, 1.0, rifle=True, aim=aim,
+                            lean=0.35 * jolt + 0.25 * aim + 0.1 * math.sin(t * 1.3 + sw_))
         run = clamp((u - 7.0) / 1.6, 0.0, 1.0)                                       # Лена вбегает слева
         if u >= 7.0:
             lx = -90 + 680 * run
@@ -6156,11 +6663,10 @@ class CinematicRenderer:
             if u >= 12.0:                                                            # уходят вместе влево
                 k = clamp((u - 12.0) / 3.2, 0.0, 1.0)
                 lx, face, walk = 640 - 740 * k, -1, t * 8
-            side_person(scr, lx, gy + 8, face, (190, 130, 70), (60, 54, 46), 1.0, hair=(96, 60, 36), ponytail=True,
-                        walk=walk, hands_up=0.8 if 8.6 <= u < 9.8 else 0.0)
+            side_person_rig(scr, self.tex.rigs["lena"], lx, gy + 8, face, 1.0, walk=walk, hands_up=0.8 if 8.6 <= u < 9.8 else 0.0)
         if u >= 12.0:                                                                # Марк идёт следом
             k = clamp((u - 12.0) / 3.2, 0.0, 1.0)
-            side_person(scr, 700 - 740 * k + 24, gy, -1, (46, 68, 84), (34, 38, 52), 1.0, helmet=(138, 44, 40), walk=t * 8 + 1.2)
+            side_person_rig(scr, self.tex.rigs["mark"], 700 - 740 * k + 24, gy, -1, 1.0, walk=t * 8 + 1.2)
         for bx in (40, 118):                                                         # мешки с песком на переднем плане
             pygame.draw.ellipse(scr, (70, 62, 44), pygame.Rect(bx - 40, gy - 24, 100, 30))
             pygame.draw.ellipse(scr, (96, 86, 62), pygame.Rect(bx - 36, gy - 26, 92, 24))
@@ -6238,7 +6744,7 @@ class PounceRenderer:
         self.screen = screen
         self.sprites = sprites
         self.tex = tex
-        self.tmp_p = pygame.Surface((90, 90), pygame.SRCALPHA)
+        self.tmp_p = pygame.Surface((270, 270), pygame.SRCALPHA)
         self.snap = None
         self.dark = pygame.Surface((SW, SH))
         self.dark.fill((0, 0, 0))
@@ -6266,8 +6772,8 @@ class PounceRenderer:
         pl = self.s.player                                      # герой застыл в панике
         pl.angle, pl.moving, pl.sprinting, pl.light_on = self.ang + math.pi + math.sin(pn.t * 40) * 0.4, True, True, True
         self.tmp_p.fill((0, 0, 0, 0))
-        self.sprites.draw_player(45, 45, self.tmp_p)
-        big = pygame.transform.rotozoom(self.tmp_p, 0.0, 2.4)
+        self.sprites.draw_player(135, 135, self.tmp_p, zoom=3.0)
+        big = pygame.transform.rotozoom(self.tmp_p, 0.0, 0.8)
         scr.blit(big, big.get_rect(center=(int(P[0] + ox), int(P[1] + oy))))
         sc = 0.45 + 2.2 * e                                     # монстр растёт, пока летит в экран
         dist = 1250 * (1 - e) + 175 * 1.25
