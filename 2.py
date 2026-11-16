@@ -25,7 +25,7 @@
     TAB             — архив прочитанных записок
     ВНИЗ НА -10     — на этаже -3 лифт срывается и падает в шахту: найди динамит и взорви завал (секретная концовка)
     АВАНПОСТ -6     — полноценный этаж (казарма, пост связи, арсенал, столовая, лаборатория, лазарет), у лифта сцена с солдатами и Леной;
-                      консоль дальней связи (вызови вертолёт и продержись минуту), антидот и ампула сыворотки:
+                      консоль дальней связи (вызови вертолёт и дождись его; монстра на аванпосте нет), антидот и ампула сыворотки:
                       три новые концовки (эвакуация, «Новая плоть», «Все живы» — антидот в финальном выборе, клавиша 3)
     ПРОБЕЛ x10      — когда монстр схватил: 10 нажатий за 3 секунды, чтобы вырваться (иначе — скример)
     P или ESC       — пауза
@@ -109,7 +109,7 @@ FLOORS = [   # маршрут: -3 -> (лифт падает) -> -10 -> -8 -> -6 
     {"name": "ЭТАЖ -8", "title": "РЕАКТОРНАЯ", "keys": 3, "mspeed": 1.08, "broken": 0.80, "bats_d": 1, "next": 5, "notes": 0,
      "tint": (255, 205, 170), "metal": True},
     {"name": "ЭТАЖ -6", "title": "АВАНПОСТ «СЕНТИНЕЛ»", "keys": 2, "mspeed": 0.90, "broken": 0.30, "bats_d": 3, "next": 6, "notes": 6,
-     "outpost": True, "tint": (205, 218, 238), "metal": True},
+     "outpost": True, "safe": True, "tint": (205, 218, 238), "metal": True},
     {"name": "ЭТАЖ -4", "title": "СКЛАДЫ", "keys": 3, "mspeed": 1.10, "broken": 0.60, "bats_d": 0, "next": 1, "notes": 0,
      "tint": (208, 228, 198)},
 ]
@@ -1938,6 +1938,7 @@ class Monster:
         self.hear_cd = 0.0
         self.lost = 0.0
         self.stun = 0.0                    # оглушён после того, как игрок вырвался
+        self.active = True                 # False — монстра на этаже нет (аванпост): не двигается, не рисуется, не ловит
 
     # --- навигация
     def set_goal(self, g, cx, cy):
@@ -1994,6 +1995,8 @@ class Monster:
 
     # --- ИИ
     def update(self, g, dt):
+        if not self.active:
+            return
         if self.stun > 0:                    # оглушён: стоит и дёргается
             self.stun -= dt
             self.anim += dt
@@ -2037,7 +2040,7 @@ class Monster:
             self.set_goal(g, int(p.x // TILE), int(p.y // TILE))
             self.hear_cd = 0.7
 
-        sp = self.SPEED[self.state] * g.dc["mspeed"] * g.plan["mspeed"] * (1.18 if g.evac_t is not None else 1.0)
+        sp = self.SPEED[self.state] * g.dc["mspeed"] * g.plan["mspeed"]
         if self.state == "chase":
             self.repath -= dt
             if see and line_clear_thick(g.grid, self.x, self.y, p.x, p.y):
@@ -2102,7 +2105,7 @@ class StoryBook:
          "Монстр плохо слышит в этом шуме. Но и ты не услышишь его."),
         ("Аванпост «Сентинел»: казарма, арсенал, лаборатория и лазарет под одной крышей.",
          "Солдаты держат периметр, Лена сидит у рации в посте связи, а в холодильниках — образцы доктора Вейры.",
-         "Отсюда можно вызвать помощь — если продержаться минуту. Или сделать выбор посерьёзнее."),
+         "Монстр сюда не проникает: гермоворота заперты наглухо. Можно перевести дух — и сделать выбор."),
         ("Склады: лабиринт ящиков, бочек и стеллажей.",
          "Сквозняк разносит звук шагов по всему этажу.",
          "Один лифт отделяет тебя от этажей, где всё началось."),
@@ -2167,7 +2170,7 @@ class StoryBook:
              "Я начинаю думать, что нас просто списали."),
             ("ЗАПИСКА НА КОНСОЛИ",
              "Рация работает, если есть питание и ключ-карта оператора. Нажмёшь вызов — вертолёт прилетит через минуту. "
-             "Продержись. Монстр слышит сигнал, он придёт."),
+             "Гермоворота держат: сюда ничего не пролезет, так что просто жди."),
             ("ХОЛОДИЛЬНИК №2",
              "Здесь лежит антидот доктора Вейры. Один шприц. Она писала: это единственный шанс вернуть Томаса, если он ещё слышит. "
              "Рядом — ампула сыворотки. НЕ ТРОГАТЬ."),
@@ -2207,10 +2210,10 @@ class StoryBook:
         "note_2_4": [("ЛЕНА", "Они вывезли сыворотку наверх... Значит, Кесслер уже на поверхности. И он знает про тебя.")],
         "note_2_5": [("ЛЕНА", "Ты слышишь его через рацию — поэтому в эфире этот шёпот. Он зовёт нас обоих.")],
         "floor_start_4": [("ЛЕНА", "Реакторная... Осторожнее: трубы шипят паром, а в шуме ты не услышишь шаги. Держись подальше от горячих секций.")],
-        "floor_start_5": [("ЛЕНА", "Я в посте связи, у рации. Возьми хоть один ключ-карту и нажми вызов на консоли — за нами пришлют вертолёт.")],
+        "floor_start_5": [("ЛЕНА", "Здесь безопасно: гермоворота держат монстра снаружи. Возьми ключ-карту и нажми вызов на консоли в посте связи.")],
         "floor_start_6": [("ЛЕНА", "Склады. Тихо: сквозняк разносит шаги по всему этажу. Скоро ты будешь на этаже, с которого всё началось.")],
-        "evac_start": [("ЛЕНА", "Вызов принят! Вертолёт будет через минуту! Продержись, Марк! Монстр слышит сигнал — он идёт к тебе!")],
-        "evac_half": [("ЛЕНА", "Тридцать секунд! Они уже над лесом! Не дай себя поймать, Марк!")],
+        "evac_start": [("ЛЕНА", "Вызов принят! Вертолёт будет через минуту! Жди на аванпосте, Марк — скоро всё закончится!")],
+        "evac_half": [("ЛЕНА", "Тридцать секунд! Они уже над лесом! Ещё немного, Марк!")],
         "antidote_found": [("ЛЕНА", "Антидот Вейры?! Береги его, Марк. Если Томми ещё слышит нас — это шанс вернуть его живым.")],
         "serum_seen": [("ЛЕНА", "Не пей это, Марк! Из этой ампулы ничего хорошего не выходит. Просто обойди.")],
         "console_hint": [("ЛЕНА", "Это консоль дальней связи. Нужна ключ-карта оператора — возьми хоть один ключ, и я вызову вертолёт.")],
@@ -2230,7 +2233,7 @@ class StoryBook:
     }
     ENDINGS = {
         "evac": ("ЭВАКУАЦИЯ", (120, 200, 255),
-                 ["Ты нажал вызов и продержался минуту, которая показалась годом. Сквозь шум пробился рокот винтов.",
+                 ["Ты нажал вызов и ждал минуту, которая показалась годом. Сквозь шум пробился рокот винтов.",
                   "Вертолёт сел у люка. Солдаты втащили тебя внутрь и закрыли дверь.",
                   "Лена ждала на базе. Но вопросы о «ГЛУБИНЕ» засекретили, а тебя отправили на карантин.",
                   "Ты спасён. Но никто так и не узнал, что осталось на нижних этажах."]),
@@ -2511,13 +2514,15 @@ class Session:
         self.events = []
         self.player = Player(1.5 * TILE, 1.5 * TILE)
         self.monster = Monster((level.monster_cell[0] + 0.5) * TILE, (level.monster_cell[1] + 0.5) * TILE)
+        self.monster.active = not self.plan.get("safe")      # на безопасном этаже (аванпост) монстра нет
         if carry:
             self.player.battery, self.player.stamina = carry["battery"], carry["stamina"]
             self.bottles, self.stats = carry["bottles"], carry["stats"]
             self.play_time, self.cheated = carry["play_time"], carry["cheated"]
             self.notes_read, self.radio_seen = set(carry["notes_read"]), set(carry["radio_seen"])
             self.has_antidote = carry.get("has_antidote", False)
-        self.monster.new_patrol_goal(self)
+        if self.monster.active:
+            self.monster.new_patrol_goal(self)
 
 
 # ------------------------------------------------------------------ СЕРВИСЫ ПРИЛОЖЕНИЯ
@@ -2691,7 +2696,7 @@ class Atmosphere:
         self.was_vis = False
         far = [c for c in self.s.floors if abs(c[0] - 1) + abs(c[1] - 1) >= 8]       # красные глаза во тьме коридоров
         random.shuffle(far)
-        self.eyes = [{"x": (c[0] + 0.5) * TILE, "y": (c[1] + 0.5) * TILE, "ph": random.uniform(0, 7), "alive": True} for c in far[:5]]
+        self.eyes = [{"x": (c[0] + 0.5) * TILE, "y": (c[1] + 0.5) * TILE, "ph": random.uniform(0, 7), "alive": True} for c in far[:(0 if self.s.plan.get("safe") else 5)]]
         self.flick_t = 0.0
         self.flick_depth = 0
         self.jit = 0
@@ -2709,7 +2714,7 @@ class Atmosphere:
     def update(self, dt):
         """Настроение этажа: опасность, пульс, дрожь, мерцание ламп, шаги, скрипы, пыль."""
         p, m = self.s.player, self.s.monster
-        d = math.hypot(m.x - p.x, m.y - p.y)
+        d = math.hypot(m.x - p.x, m.y - p.y) if m.active else 1e9           # нет монстра — нет опасности, шагов и дыхания
         self.glitch_t = max(0.0, self.glitch_t - dt)
         self.seen_cd = max(0.0, self.seen_cd - dt)
         vis = (d < 430 and p.light_on and p.battery > 0 and not self.s.hidden
@@ -2777,7 +2782,7 @@ class Atmosphere:
             self.breath_t = random.uniform(1.8, 3.0)
         self.creak_t -= dt
         if self.creak_t <= 0:
-            amb = random.choice(("creak", "creak", "whisper", "bang", "scratch", "roar"))
+            amb = random.choice(("creak", "creak", "bang") if self.s.plan.get("safe") else ("creak", "creak", "whisper", "bang", "scratch", "roar"))
             self.audio.play(amb, vol=0.16 if amb == "roar" else random.uniform(0.2, 0.55))     # «roar» — далёкий рёв
             if amb == "whisper":
                 self.s.emit("whisper")                     # монстр шепчет имя героя — реплика появится на экране
@@ -2908,7 +2913,7 @@ class ThreatSystem:
         if s.grace > 0:
             s.grace -= dt
         d = math.hypot(m.x - p.x, m.y - p.y)
-        if ((d < p.r + m.r + 2 and not s.hidden) or s.pending_catch) and s.grace <= 0:
+        if m.active and ((d < p.r + m.r + 2 and not s.hidden) or s.pending_catch) and s.grace <= 0:
             s.emit("caught")               # дальше — схватка (StruggleFight), а при проигрыше — скример
 
 
@@ -3069,6 +3074,8 @@ class StealthSystem:
     def trigger_alarm(self):
         """Третий ключ включает сирену: монстр идёт на звук."""
         p, m = self.s.player, self.s.monster
+        if not m.active:                                  # сирена зовёт монстра, а его здесь нет
+            return
         self.s.alarm_t = 10.0
         self.audio.play("alarm", 4)
         if m.state != "chase":
@@ -3719,7 +3726,7 @@ class SpriteRenderer:
             gl = self.tex.glow_exit_g if p.keys >= self.s.keys_needed else self.tex.glow_exit_r
             scr.blit(gl, gl.get_rect(center=(ex - camx, ey - camy)))
         dm = math.hypot(m.x - p.x, m.y - p.y)
-        if dm < 480 and line_clear(self.s.grid, p.x, p.y, m.x, m.y):
+        if m.active and dm < 480 and line_clear(self.s.grid, p.x, p.y, m.x, m.y):
             cf, sf = math.cos(m.facing), math.sin(m.facing)
             for side in (-1, 1):
                 ex_ = m.x - camx + cf * 13 - sf * 4 * side
@@ -4667,7 +4674,8 @@ class PlayView:
         self.sprites.draw_props(camx, camy)
         self.sprites.draw_thrown(camx, camy)
         self.sprites.draw_dust(camx, camy)
-        self.monster_view.draw(m, camx, camy)
+        if m.active:
+            self.monster_view.draw(m, camx, camy)
         if not self.s.hidden:
             self.sprites.draw_player(int(p.x - camx), int(p.y - camy))
 
@@ -5835,7 +5843,7 @@ class AchievementTracker:
         "mercy": ("МИЛОСЕРДИЕ", "Пощади Томаса в финале"),
         "slip": ("УСКОЛЬЗНУЛ", "Вырвись из хватки монстра за 3 секунды"),
         "blaster": ("ПОДРЫВНИК", "Выберись на поверхность, взорвав завал на этаже -10"),
-        "evac": ("ЭВАКУИРОВАН", "Вызови вертолёт с аванпоста и продержись минуту"),
+        "evac": ("ЭВАКУИРОВАН", "Вызови вертолёт с аванпоста и дождись его"),
         "serum": ("НОВАЯ ПЛОТЬ", "Выпей сыворотку на аванпосте"),
         "cure": ("ВСЕ ЖИВЫ", "Верни Томасу человеческий облик антидотом"),
     }
@@ -6798,33 +6806,25 @@ class PounceRenderer:
 
 # ------------------------------------------------------------------ ЭВАКУАЦИЯ
 class EvacSystem:
-    """Эвакуация (ответственность: обратный отсчёт после вызова с аванпоста, натравливание монстра, прибытие вертолёта)."""
+    """Эвакуация (ответственность: обратный отсчёт после вызова с аванпоста и прибытие вертолёта). На аванпосте монстра нет."""
 
     def __init__(self, audio, note, s):
         self.audio = audio
         self.note = note
         self.s = s
-        self.redirect_t = 0.0
         self.half_said = False
 
     def start(self):
-        self.redirect_t = 0.0
         self.half_said = False
         self.audio.play("console_on")
         self.audio.play("alarm", 8, 0.3)
-        self.note.say("ВЫЗОВ ПОСЛАН! Продержись минуту — вертолёт уже в пути", 5.0)
+        self.note.say("ВЫЗОВ ПОСЛАН! Вертолёт будет через минуту", 5.0)
 
     def update(self, dt):
         s = self.s
         if s.evac_t is None:
             return
         s.evac_t -= dt
-        self.redirect_t -= dt
-        m, p = s.monster, s.player
-        if self.redirect_t <= 0 and m.state != "chase" and m.stun <= 0:      # сигнал привлекает монстра
-            self.redirect_t = 4.0
-            m.state = "investigate"
-            m.set_goal(s, int(p.x // TILE), int(p.y // TILE))
         if s.evac_t <= 30 and not self.half_said:
             self.half_said = True
             s.emit("evac_half")
