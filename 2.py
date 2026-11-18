@@ -24,7 +24,7 @@
     F8 / F9 / F10   — ЧИТЫ: F8 — следующий этаж, F9 — все ключи + заряд + телепорт к двери, F10 — сразу финал
     TAB             — архив прочитанных записок
     ВНИЗ НА -10     — на этаже -3 лифт срывается и падает в шахту: найди динамит и взорви завал (секретная концовка)
-    АВАНПОСТ -6     — полноценный этаж (казарма, пост связи, арсенал, столовая, лаборатория, лазарет), у лифта сцена с солдатами и Леной;
+    АВАНПОСТ -6     — полноценный этаж (казарма, пост связи, арсенал, столовая, лаборатория, лазарет), у лифта сцена (вид сверху) с солдатами и Леной;
                       консоль дальней связи (вызови вертолёт и дождись его; монстра на аванпосте нет), антидот и ампула сыворотки:
                       три новые концовки (эвакуация, «Новая плоть», «Все живы» — антидот в финальном выборе, клавиша 3)
     ПРОБЕЛ x10      — когда монстр схватил: 10 нажатий за 3 секунды, чтобы вырваться (иначе — скример)
@@ -1137,273 +1137,6 @@ def make_person_hi(kind):
     head.blit(outlined(hb, (8, 8, 10), 2), (0, 0), pygame.Rect(14, 16, 70, 64))
     return {"body": outlined(base, (8, 8, 10), 2), "head": head}
 
-SKIN = (206, 168, 140)
-
-def _part(size, draw):
-    s = pygame.Surface(size, pygame.SRCALPHA)
-    draw(s)
-    return s
-
-def make_side_rig(kind):
-    """
-    Боковой «скелет» человека для кат-сцен: части запечены в 2x и рисуются повёрнутыми (голова, торс, рукав, штанина с ботинком,
-    автомат, рюкзак). kind: mark | lena | soldier. Все части смотрят вправо; для взгляда влево части отражаются.
-    """
-    rnd = random.Random({"mark": 1, "lena": 2, "soldier": 3}[kind])
-    coat = {"mark": (52, 76, 94), "lena": (196, 120, 64), "soldier": (84, 98, 66)}[kind]
-    pants = {"mark": (40, 46, 62), "lena": (62, 56, 48), "soldier": (62, 72, 52)}[kind]
-    cf = make_fabric(coat, 160)
-    pf = make_fabric(pants, 160)
-    if kind == "soldier":
-        for _ in range(40):
-            pygame.draw.ellipse(cf, shade(coat, rnd.choice((-28, -16, 14))), (rnd.randint(0, 140), rnd.randint(0, 140), rnd.randint(8, 22), rnd.randint(6, 14)))
-        for _ in range(40):
-            pygame.draw.ellipse(pf, shade(pants, rnd.choice((-24, -14, 12))), (rnd.randint(0, 140), rnd.randint(0, 140), rnd.randint(8, 22), rnd.randint(6, 14)))
-    rig = {}
-
-    # ---------------- голова 80x84 (центр головы (40,38); шея снизу)
-    def head(s, eyes="open", mouth="closed", brow="neutral"):
-        pygame.draw.rect(s, (150, 112, 92), (22, 56, 26, 28))                                      # шея
-        pygame.draw.rect(s, (24, 18, 16), (22, 56, 26, 28), 1)
-        pygame.draw.ellipse(s, (20, 14, 12), (8, 6, 64, 62))
-        pygame.draw.ellipse(s, SKIN, (10, 8, 60, 58))
-        pygame.draw.polygon(s, SKIN, [(66, 38), (78, 48), (66, 54)])                               # нос
-        pygame.draw.lines(s, (150, 112, 92), False, [(66, 38), (78, 48), (66, 54)], 1)
-        if eyes == "closed":                                                                       # моргает: дуга с ресницами
-            pygame.draw.arc(s, (40, 30, 26), (50, 31, 14, 9), 3.5, 6.0, 2)
-            pygame.draw.line(s, (40, 30, 26), (51, 37), (49, 40), 1)
-        elif eyes == "wide":                                                                       # испуг: глаз шире, зрачок мал
-            pygame.draw.ellipse(s, (252, 252, 250), (49, 29, 16, 13))
-            pygame.draw.ellipse(s, (60, 50, 44), (49, 29, 16, 13), 1)
-            pygame.draw.circle(s, (46, 40, 36), (60, 36), 2)
-            pygame.draw.circle(s, (255, 255, 255), (59, 35), 1)
-        else:
-            pygame.draw.ellipse(s, (248, 248, 246), (50, 32, 14, 9))                               # глаз
-            pygame.draw.ellipse(s, (60, 50, 44), (50, 32, 14, 9), 1)
-            pygame.draw.circle(s, (46, 40, 36), (60, 36), 3)
-            pygame.draw.circle(s, (255, 255, 255), (59, 35), 1)
-        by = {"neutral": (28, 28), "angry": (25, 31), "worry": (31, 25)}[brow]                       # брови: наклон передаёт настроение
-        pygame.draw.line(s, (60, 44, 34), (48, by[0]), (64, by[1]), 3)
-        if mouth == "talk":
-            pygame.draw.ellipse(s, (60, 16, 20), (58, 52, 10, 6))
-            pygame.draw.ellipse(s, (190, 70, 74), (60, 55, 6, 3))
-        elif mouth == "shout":
-            pygame.draw.ellipse(s, (50, 10, 14), (56, 49, 14, 12))
-            pygame.draw.rect(s, (240, 236, 224), (58, 49, 10, 3))
-            pygame.draw.ellipse(s, (196, 74, 78), (59, 56, 8, 4))
-        elif mouth == "small":
-            pygame.draw.ellipse(s, (60, 16, 20), (59, 53, 7, 5))
-        else:
-            pygame.draw.line(s, (136, 80, 76), (56, 56), (68, 55), 2)                              # рот
-        pygame.draw.ellipse(s, (172, 130, 108), (22, 34, 13, 18))                                  # ухо
-        pygame.draw.ellipse(s, (132, 90, 74), (25, 38, 6, 10))
-        if kind == "mark":                                                                         # вязаная шапка с отворотом и помпоном
-            hat = textured((80, 84), lambda m: pygame.draw.ellipse(m, MASK_W, (8, 0, 62, 40)), make_fabric((150, 48, 44), 80))
-            s.blit(hat, (0, 0))
-            pygame.draw.ellipse(s, (62, 18, 18), (8, 0, 62, 40), 2)
-            pygame.draw.rect(s, (118, 34, 32), (9, 24, 60, 12), border_radius=4)                   # отворот
-            pygame.draw.rect(s, (62, 18, 18), (9, 24, 60, 12), 1, border_radius=4)
-            for x in range(14, 66, 5):
-                pygame.draw.line(s, (96, 28, 28), (x, 4), (x - 2, 24), 1)
-                pygame.draw.line(s, (84, 24, 24), (x + 2, 26), (x + 2, 34), 1)
-            pygame.draw.circle(s, (214, 196, 188), (38, 2), 6)
-            pygame.draw.circle(s, (240, 228, 220), (36, 0), 2)
-        elif kind == "soldier":                                                                    # шлем с ремешком и креплением ПНВ
-            hm = textured((80, 84), lambda m: pygame.draw.ellipse(m, MASK_W, (4, -4, 70, 46)), cf)
-            s.blit(hm, (0, 0))
-            pygame.draw.ellipse(s, (20, 26, 18), (4, -4, 70, 46), 2)
-            pygame.draw.rect(s, (40, 48, 34), (6, 28, 68, 8), border_radius=3)                     # кромка
-            for k in range(4):
-                pygame.draw.line(s, shade(coat, -40), (10 + k * 14, 4), (6 + k * 14, 28), 1)
-            pygame.draw.rect(s, (24, 26, 28), (60, 8, 12, 16), border_radius=2)                    # ПНВ
-            pygame.draw.circle(s, (70, 200, 120), (70, 16), 3)
-            pygame.draw.line(s, (30, 36, 26), (34, 38), (44, 64), 2)                               # ремешок
-            pygame.draw.line(s, (30, 36, 26), (44, 64), (56, 54), 2)
-        else:                                                                                      # Лена: каштановые волосы, чёлка, хвост
-            hair = (104, 64, 38)
-            hr = textured((80, 84), lambda m: pygame.draw.ellipse(m, MASK_W, (6, 0, 60, 44)), make_fabric(hair, 80))
-            s.blit(hr, (0, 0))
-            pygame.draw.polygon(s, hair, [(12, 30), (24, 56), (30, 40), (22, 22)])                 # пряди сзади
-            pygame.draw.polygon(s, hair, [(46, 6), (70, 18), (66, 30), (52, 22)])                  # чёлка
-            pygame.draw.lines(s, shade(hair, 36), False, [(20, 6), (40, 2), (62, 12)], 2)          # блик
-            pygame.draw.polygon(s, shade(hair, -30), [(10, 22), (2, 44), (8, 66), (16, 70), (14, 44)])   # хвост
-            pygame.draw.polygon(s, hair, [(12, 24), (5, 44), (10, 64), (15, 62), (14, 44)])
-            pygame.draw.rect(s, (30, 140, 150), (8, 28, 10, 6), border_radius=2)                   # резинка
-    rig["head"] = outlined(_part((80, 84), head), (10, 8, 8), 2)
-    for name, kw in (("blink", {"eyes": "closed"}), ("talk", {"mouth": "talk"}), ("shout", {"mouth": "shout", "brow": "angry"}),
-                     ("worry", {"eyes": "wide", "brow": "worry", "mouth": "small"})):
-        rig["head_" + name] = outlined(_part((80, 84), lambda s_, kw=kw: head(s_, **kw)), (10, 8, 8), 2)
-
-    # ---------------- торс 76x136
-    def torso(s):
-        t = textured((76, 136), lambda m: pygame.draw.rect(m, MASK_W, (4, 4, 68, 128), border_radius=18), cf)
-        s.blit(t, (0, 0))
-        pygame.draw.rect(s, shade(coat, -60), (4, 4, 68, 128), 2, border_radius=18)
-        pygame.draw.line(s, shade(coat, -50), (44, 20), (44, 128), 2)                              # молния/планка
-        for y in (30, 60, 90):
-            pygame.draw.line(s, shade(coat, -40), (42, y), (46, y), 1)
-        for (x1, y1, x2, y2) in ((16, 40, 28, 46), (14, 76, 28, 82), (20, 100, 32, 104)):          # складки
-            pygame.draw.line(s, shade(coat, -30), (x1, y1), (x2, y2), 2)
-        pygame.draw.rect(s, shade(coat, -28), (10, 120, 56, 10), border_radius=3)                  # подол/ремень
-        if kind == "mark":
-            for y in (28, 108):
-                pygame.draw.rect(s, (44, 60, 74), (4, y, 68, 8))                                    # светоотражающие полосы
-                pygame.draw.rect(s, (226, 214, 110), (4, y + 2, 68, 2))
-                pygame.draw.rect(s, (226, 214, 110), (4, y + 6, 68, 1))
-            pygame.draw.rect(s, (36, 52, 66), (46, 60, 20, 24), border_radius=3)                   # карман
-            pygame.draw.line(s, (26, 40, 52), (46, 66), (66, 66), 2)
-        if kind == "soldier":
-            pygame.draw.rect(s, (22, 28, 20), (14, 14, 52, 92), border_radius=10)                  # разгрузка
-            pygame.draw.rect(s, (52, 60, 46), (16, 16, 48, 88), border_radius=9)
-            for (x, y) in ((20, 70), (36, 70), (52, 70)):
-                pygame.draw.rect(s, (30, 36, 26), (x, y, 12, 22), border_radius=2)                  # подсумки
-                pygame.draw.rect(s, (84, 94, 70), (x + 1, y + 1, 10, 6), border_radius=1)
-            pygame.draw.rect(s, (36, 42, 32), (22, 24, 34, 34), border_radius=3)                    # пластина
-            pygame.draw.rect(s, (70, 78, 60), (24, 26, 30, 30), 1, border_radius=3)
-        if kind == "lena":
-            pygame.draw.ellipse(s, (214, 196, 168), (8, -2, 60, 26))                                # меховой капюшон
-            for k in range(14):
-                a = k * 0.45
-                pygame.draw.line(s, (240, 228, 206), (38 + math.cos(a) * 12, 11 + math.sin(a) * 6), (38 + math.cos(a) * 28, 11 + math.sin(a) * 10), 2)
-            pygame.draw.rect(s, (22, 70, 76), (14, 14, 48, 16), border_radius=7)                    # шарф
-            pygame.draw.rect(s, (40, 130, 138), (16, 16, 44, 12), border_radius=6)
-            pygame.draw.rect(s, (126, 86, 52), (40, 94, 28, 24), border_radius=4)                   # сумка на бедре
-            pygame.draw.rect(s, (176, 134, 84), (46, 98, 16, 6))
-    rig["torso"] = outlined(_part((76, 136), torso), (10, 8, 8), 2)
-    light_pass(rig["torso"], [(24, 36, 40, 54, 1), (62, 110, 34, 46, -1)])
-
-    # ---------------- рукав 28x124 (шарнир сверху по центру)
-    def arm(s):
-        sl = textured((28, 124), lambda m: pygame.draw.rect(m, MASK_W, (3, 0, 22, 96), border_radius=9), cf)
-        s.blit(sl, (0, 0))
-        pygame.draw.rect(s, shade(coat, -60), (3, 0, 22, 96), 2, border_radius=9)
-        pygame.draw.rect(s, shade(coat, -45), (3, 88, 22, 10), border_radius=3)                    # манжета
-        gl = (26, 26, 30) if kind != "lena" else (120, 80, 60)
-        pygame.draw.ellipse(s, (10, 10, 12), (2, 94, 24, 28))
-        pygame.draw.ellipse(s, gl, (4, 96, 20, 24))
-        pygame.draw.line(s, shade(gl, 50), (8, 100), (8, 114), 2)
-        pygame.draw.line(s, shade(coat, 28), (7, 8), (7, 84), 1)
-    rig["arm"] = outlined(_part((28, 124), arm), (10, 8, 8), 2)
-
-    # ---------------- нога 34x140 (шарнир сверху по центру); ботинок смотрит вправо
-    def leg(s):
-        pt = textured((34, 140), lambda m: pygame.draw.rect(m, MASK_W, (4, 0, 26, 114), border_radius=8), pf)
-        s.blit(pt, (0, 0))
-        pygame.draw.rect(s, shade(pants, -55), (4, 0, 26, 114), 2, border_radius=8)
-        for y in (40, 70):
-            pygame.draw.line(s, shade(pants, -35), (6, y), (28, y + 4), 2)                         # складки на колене
-        bt = [(3, 104), (29, 104), (30, 118), (40 - 6, 130), (34, 138), (2, 138)]
-        pygame.draw.polygon(s, (10, 10, 12), [(x, y) for x, y in bt])
-        pygame.draw.polygon(s, (34, 34, 38) if kind != "lena" else (88, 56, 36), [(x + (2 if x < 10 else -1), y + (2 if y < 120 else -3)) for x, y in bt])
-        pygame.draw.rect(s, (16, 16, 18), (2, 134, 32, 6))                                           # подошва
-        pygame.draw.line(s, (100, 100, 108), (6, 108), (26, 108), 1)
-        for k in range(3):
-            pygame.draw.line(s, (170, 170, 176), (10 + k * 5, 112 + k), (14 + k * 5, 115 + k), 1)   # шнуровка
-    rig["leg"] = outlined(_part((34, 140), leg), (10, 8, 8), 2)
-    light_pass(rig["leg"], [(14, 30, 16, 36, 1)])
-
-    # ---------------- автомат 220x56 (приклад слева, дуло справа)
-    if kind == "soldier":
-        def rifle(s):
-            K, M = (14, 14, 16), (52, 54, 60)
-            pygame.draw.polygon(s, K, [(2, 14), (46, 20), (46, 40), (8, 44), (2, 30)])                   # приклад
-            pygame.draw.polygon(s, M, [(5, 18), (44, 23), (44, 37), (10, 41), (5, 30)])
-            pygame.draw.rect(s, K, (44, 16, 70, 28), border_radius=4)                                    # ствольная коробка
-            pygame.draw.rect(s, M, (46, 18, 66, 22), border_radius=3)
-            pygame.draw.rect(s, (36, 38, 42), (56, 18, 20, 5))
-            pygame.draw.rect(s, K, (66, 4, 30, 14), border_radius=3)                                     # прицел
-            pygame.draw.rect(s, (40, 42, 48), (68, 6, 26, 9), border_radius=2)
-            pygame.draw.circle(s, (80, 180, 220), (93, 10), 4)
-            pygame.draw.rect(s, K, (112, 20, 70, 18), border_radius=3)                                   # цевьё
-            pygame.draw.rect(s, M, (114, 22, 66, 12), border_radius=2)
-            for x in range(120, 176, 9):
-                pygame.draw.line(s, (30, 32, 36), (x, 23), (x, 33), 2)
-            pygame.draw.rect(s, K, (180, 25, 34, 8))                                                     # ствол
-            pygame.draw.rect(s, (96, 98, 106), (182, 26, 30, 3))
-            pygame.draw.rect(s, K, (206, 21, 12, 16), border_radius=2)                                   # пламегаситель
-            pygame.draw.polygon(s, K, [(70, 40), (92, 40), (96, 56), (76, 56)])                          # магазин
-            pygame.draw.polygon(s, (60, 62, 68), [(73, 41), (90, 41), (92, 54), (78, 54)])
-            pygame.draw.line(s, (130, 134, 142), (50, 19), (108, 19), 1)
-        rig["rifle"] = outlined(_part((220, 58), rifle), (8, 8, 10), 2)
-
-    # ---------------- рюкзак (вид сбоку) 56x112
-    if kind in ("mark", "soldier"):
-        def pack(s):
-            col = (96, 72, 46) if kind == "mark" else (62, 72, 52)
-            t = textured((56, 112), lambda m: pygame.draw.rect(m, MASK_W, (4, 4, 48, 104), border_radius=12), make_fabric(col, 112))
-            s.blit(t, (0, 0))
-            pygame.draw.rect(s, shade(col, -60), (4, 4, 48, 104), 2, border_radius=12)
-            for y in (36, 60, 84):
-                pygame.draw.line(s, shade(col, -45), (6, y), (50, y), 2)
-            pygame.draw.rect(s, (186, 170, 110), (22, 22, 8, 8))
-        rig["pack"] = outlined(_part((56, 112), pack), (10, 8, 8), 2)
-        light_pass(rig["pack"], [(18, 30, 24, 40, 1)])
-    rig["flip"] = {k: pygame.transform.flip(v, True, False) for k, v in rig.items() if k != "flip"}
-    return rig
-
-_SCALED = {}
-
-def _scaled(surf, k):
-    """Уменьшенная копия запечённой части (кэш: масштабируем один раз, а не каждый кадр)."""
-    key = (id(surf), round(k, 3))
-    r = _SCALED.get(key)
-    if r is None:
-        r = _SCALED[key] = pygame.transform.rotozoom(surf, 0, k)
-    return r
-
-def _limb(scr, surf, pivot, ang_deg, k, anchor_y):
-    """Конечность на шарнире: surf висит вниз от pivot; ang_deg>0 отводит нижний конец вправо (против часовой)."""
-    r = pygame.transform.rotozoom(surf, ang_deg, k)
-    L = (surf.get_height() / 2.0 - anchor_y) * k
-    a = math.radians(ang_deg)
-    c = (pivot[0] + math.sin(a) * L, pivot[1] + math.cos(a) * L)
-    scr.blit(r, r.get_rect(center=(int(c[0]), int(c[1]))))
-
-def side_person_rig(scr, rig, x, gy, face, sc=1.0, walk=0.0, aim=None, hands_up=0.0, rifle=False, lean=0.0, expr="idle", bob=0.0):
-    """
-    Человек сбоку из запечённых частей. face=+1 вправо, -1 влево; aim 0..1 — автомат от опущенного до нацеленного.
-    expr — выражение лица: idle, blink, talk, shout, worry; bob — дыхание (пиксели вертикального покачивания корпуса и головы).
-    """
-    P = rig if face > 0 else rig["flip"]
-    f = face
-    k = 0.5 * sc
-    hip = (x + lean * 4 * sc, gy - 66 * sc)
-    sw = math.sin(walk)
-    if "pack" in P:
-        pk = _scaled(P["pack"], k)
-        scr.blit(pk, pk.get_rect(center=(int(x - f * 24 * sc + lean * 6 * sc), int(gy - 96 * sc))))
-    for sd, order in ((-1, 0), (1, 1)):                                                      # ноги: задняя темнее
-        ang = math.degrees(math.asin(clamp(sw * 20 * sd / 66.0, -0.9, 0.9))) * f
-        _limb(scr, P["leg"], hip, ang, k, 12)
-    sh = (x + f * 2 * sc + lean * 8 * sc, gy - 108 * sc + bob * sc)
-    if not rifle:                                                                             # дальняя рука — за торсом
-        _limb(scr, P["arm"], sh, math.degrees(math.asin(clamp(sw * 14 / 62.0, -0.9, 0.9))) * f, k * 0.92, 10)
-    tor = _scaled(P["torso"], k)
-    scr.blit(tor, tor.get_rect(center=(int(x + lean * 8 * sc + f * 2 * sc), int(gy - 90 * sc + bob * sc))))
-    if rifle:
-        a = (1.0 - (aim or 0.0)) * 0.95
-        d = (f * math.cos(a), math.sin(a))
-        butt = (sh[0] - d[0] * 14 * sc, sh[1] - d[1] * 14 * sc + 6 * sc)
-        rf = P["rifle"]
-        r = pygame.transform.rotozoom(rf, -math.degrees(a) * f, k)
-        mid = (butt[0] + d[0] * 55 * sc, butt[1] + d[1] * 55 * sc)
-        scr.blit(r, r.get_rect(center=(int(mid[0]), int(mid[1]))))
-        for hnd in ((butt[0] + d[0] * 24 * sc, butt[1] + d[1] * 24 * sc), (butt[0] + d[0] * 64 * sc, butt[1] + d[1] * 64 * sc)):
-            dx, dy = hnd[0] - sh[0], hnd[1] - sh[1]
-            ang = math.degrees(math.atan2(dx, dy))
-            _limb(scr, P["arm"], sh, ang, k * clamp(math.hypot(dx, dy) / (62 * sc), 0.55, 1.2), 10)
-    else:
-        hu = hands_up
-        if hu > 0.05:                                                                         # ближняя рука поднята вперёд
-            hand = (sh[0] + f * (8 + 34 * hu) * sc, sh[1] + (48 - 66 * hu) * sc)
-            dx, dy = hand[0] - sh[0], hand[1] - sh[1]
-            _limb(scr, P["arm"], sh, math.degrees(math.atan2(dx, dy)), k * clamp(math.hypot(dx, dy) / (62 * sc), 0.55, 1.2), 10)
-        else:
-            _limb(scr, P["arm"], sh, math.degrees(math.asin(clamp(-sw * 14 / 62.0, -0.9, 0.9))) * f, k, 10)
-    hd = _scaled(P["head" if expr == "idle" else "head_" + expr], k)
-    scr.blit(hd, hd.get_rect(center=(int(x + f * 4 * sc + lean * 10 * sc), int(gy - 140 * sc + bob * 1.4 * sc))))
-
-
 def _limb_poly(w, h, x0, x1, w0, w1):
     cy = h / 2.0
     return [(x0, cy - w0 / 2.0), (x1, cy - w1 / 2.0), (x1, cy + w1 / 2.0), (x0, cy + w0 / 2.0)]
@@ -1533,6 +1266,7 @@ def make_monster_parts():
 
 def place_part(scr, spr, pivot, a, phi, k):
     """Кладёт запечённую часть так, чтобы её шарнир pivot оказался в точке a, а ось +x смотрела по углу phi (рад, экранные координаты)."""
+    k = max(k, 0.03)                                    # слишком мелкий масштаб дал бы поверхность нулевого размера
     r = pygame.transform.rotozoom(spr, -math.degrees(phi), k)
     vx, vy = (spr.get_width() / 2.0 - pivot[0]) * k, (spr.get_height() / 2.0 - pivot[1]) * k
     c, sn = math.cos(phi), math.sin(phi)
@@ -1621,7 +1355,14 @@ def make_hero_parts():
         light_pass(s, [(24, 8, 24, 40, 1), (40, 28, 20, 36, -1)])
         return outlined(s, (8, 8, 10), 2)
 
-    P["boot"], P["arm_flash"], P["arm_gun"] = boot(), arm_flash(), arm_gun()
+    def arm_plain():
+        s = pygame.Surface((80, 36), pygame.SRCALPHA)
+        sleeve(s, 6, 56, 22, 17, 18)
+        glove(s, 54, 18)
+        light_pass(s, [(24, 8, 24, 40, 1), (40, 28, 20, 36, -1)])
+        return outlined(s, (8, 8, 10), 2)
+
+    P["boot"], P["arm_flash"], P["arm_gun"], P["arm_plain"] = boot(), arm_flash(), arm_gun(), arm_plain()
     return P
 
 
@@ -2927,7 +2668,6 @@ class Textures:
         self.mparts = make_monster_parts()                  # руки, предплечья, кисти с когтями, челюсти
         self.hparts = make_hero_parts()                     # ботинки, рука с фонариком, рука с пистолетом
         self.persons = {k: make_person_hi(k) for k in PERSONS}      # люди сверху: солдат, Лена, учёный, Кесслер, охранник
-        self.rigs = {k: make_side_rig(k) for k in ("mark", "lena", "soldier")}   # боковые фигуры для кат-сцен
 
 
 
@@ -3729,10 +3469,11 @@ class SpriteRenderer:
         self.exit_label = self.text.f_small.render("ВЫХОД", True, (210, 220, 210))
 
 
-    def draw_player(self, sx, sy, target=None, zoom=1.0):
+    def draw_player(self, sx, sy, target=None, zoom=1.0, open_hands=False):
         """
         Игрок: текстурный корпус (рюкзак, куртка, шапка), ботинки со шнуровкой, рукав с перчаткой и фонариком, при желании пистолет.
         Детали запечены в 3-кратном размере. zoom > 1 — крупный план (скример, схватка): корпус берётся из текстуры высокого разрешения.
+        open_hands — безоружен: вторая рука вытянута вперёд пустой (кат-сцены).
         """
         z = zoom
         k = z / 3.0
@@ -3763,6 +3504,10 @@ class SpriteRenderer:
             sh2 = (sx - px * 8 * z, sy - py * 8 * z)
             hand2 = (sx - px * 4 * z + ca * 11 * z, sy - py * 4 * z + sa * 11 * z)
             place_part(scr, HP["arm_gun"], (8, 18), sh2, math.atan2(hand2[1] - sh2[1], hand2[0] - sh2[0]), 0.6 * k)
+        elif open_hands:
+            sh2 = (sx - px * 8 * z, sy - py * 8 * z)
+            hand2 = (sx - px * 6 * z + ca * 15 * z, sy - py * 6 * z + sa * 15 * z)
+            place_part(scr, HP["arm_plain"], (8, 18), sh2, math.atan2(hand2[1] - sh2[1], hand2[0] - sh2[0]), ka)
 
     def draw_pickups(self, camx, camy):
         scr, t = self.screen, self.clock.t
@@ -6668,16 +6413,20 @@ class CinematicRenderer:
                   (4.3, 6.2, "ВЗРЫВ! Свет... это поверхность?")],
     }
 
-    def __init__(self, cin, clock, screen, tex, text):
+    def __init__(self, cin, clock, screen, tex, text, sprites, s):
         self.cin = cin
         self.clock = clock
         self.screen = screen
         self.tex = tex
         self.text = text
+        self.sprites = sprites
+        self.s = s
         self.room = None
         self.cabin = None
         self.veil = pygame.Surface((SW, SH))
         self.beam = pygame.Surface((SW, SH), pygame.SRCALPHA)
+        self.spill = pygame.Surface((SW, SH), pygame.SRCALPHA)               # свет из открытой двери лифта (вид сверху)
+        pygame.draw.polygon(self.spill, (255, 236, 170, 96), [(SW // 2 - 112, 266), (SW // 2 + 112, 266), (SW // 2 + 360, SH), (SW // 2 - 360, SH)])
         pygame.draw.polygon(self.beam, (255, 250, 220, 110), [(SW // 2 - 90, 0), (SW // 2 + 90, 0), (SW // 2 + 420, SH), (SW // 2 - 420, SH)])
 
     def prepare(self):
@@ -6852,93 +6601,143 @@ class CinematicRenderer:
             self.flash((0, 0, 0), 255 * clamp((u - 6.6) / 1.0, 0.0, 1.0))
 
     def draw_outpost(self, u):
-        """Вид сбоку: двое солдат у лифта слышат его приезд, вскидывают автоматы; дверь открывается — внутри Марк;
-        вбегает Лена, оружие опускают, и Марк уходит вместе с ней."""
+        """
+        Вид сверху: у лифта двое солдат болтают, слышат его приезд, разворачиваются и берут дверь на прицел (красные лазерные
+        указки); дверь открывается — в кабине Марк с вытянутыми вперёд руками; вбегает Лена, солдаты отводят оружие в стороны,
+        и Марк уходит с Леной в глубь аванпоста.
+        """
         scr, tx, t = self.screen, self.text, self.clock.t
-        gy = 560
-
-        def expr_of(speaking, shout=False, worry=False, ph=0.0):               # выражение лица: речь, тревога, моргание
-            if speaking:
-                return ("shout" if shout else "talk") if int(t * 9 + ph) % 2 == 0 else "idle"
-            if worry:
-                return "worry"
-            return "blink" if (t + ph) % 3.4 < 0.14 else "idle"
-        scr.fill((26, 30, 34))                                                     # бетонная стена бункера
-        for x in range(0, SW, 128):
-            pygame.draw.line(scr, (18, 22, 26), (x, 0), (x, gy), 3)
-        pygame.draw.rect(scr, (34, 40, 44), (0, 86, SW, 12))
-        pygame.draw.rect(scr, (58, 64, 68), (0, 120, SW, 14))                      # трубы
-        pygame.draw.rect(scr, (44, 50, 54), (0, 144, SW, 8))
-        for x in range(60, SW, 210):
-            pygame.draw.rect(scr, (30, 34, 38), (x, 112, 12, 36))
-        pygame.draw.rect(scr, (34, 38, 42), (0, gy - 70, SW, 70))                  # цоколь с предупреждающими полосами
-        for x in range(-40, SW, 60):
-            pygame.draw.line(scr, (150, 126, 30), (x, gy), (x + 40, gy - 24), 8)
-        tx.draw_text(tx.f_big, "СЕНТИНЕЛ", (44, 52, 56), (330, 300))
-        pygame.draw.rect(scr, (40, 42, 44), (0, gy, SW, SH - gy))                  # пол
-        for x in range(0, SW + 60, 90):
-            pygame.draw.line(scr, (26, 28, 30), (x, gy), (x - 50, SH), 2)
-        pygame.draw.line(scr, (70, 72, 76), (0, gy), (SW, gy), 3)
-        for lx in (260, 640):                                                      # лампы: свет падает на пол
-            pygame.draw.rect(scr, (80, 76, 60), (lx - 40, 70, 80, 10))
-            self.screen.blit(self.tex.glow_lamp, self.tex.glow_lamp.get_rect(center=(lx, 90)))
-        cx = 800                                                                    # лифт
-        op = clamp((u - 4.7) / 1.4, 0.0, 1.0)
+        cx, door_y = SW // 2, 270
+        op = clamp((u - 4.7) / 1.4, 0.0, 1.0)                                       # дверь: 0 — закрыта, 1 — открыта
         op = op * op * (3 - 2 * op)
-        pygame.draw.rect(scr, (12, 14, 16), (cx - 136, 186, 272, gy - 186))
-        pygame.draw.rect(scr, (20, 22, 26), (cx - 124, 198, 248, gy - 198))
-        pygame.draw.rect(scr, (10, 10, 12), (cx - 66, 148, 132, 36))                # табло этажа
+
+        def ease(a, b, k):
+            return a + (b - a) * clamp(k, 0.0, 1.0)
+
+        def aang(a, b, k):                                                           # плавный поворот по кратчайшей дуге
+            d = (b - a + math.pi) % (2 * math.pi) - math.pi
+            return a + d * clamp(k, 0.0, 1.0)
+
+        def shadow(x, y, r=26):
+            pygame.draw.ellipse(scr, (8, 8, 10), pygame.Rect(int(x - r + 4), int(y - r * 0.6 + 6), int(r * 2), int(r * 1.3)))
+
+        scr.blit(self.room, (-10, -10))                                              # пол вестибюля
+        self.flash((0, 0, 0), 125)
+        for lx in (250, 774):                                                        # потолочные лампы дают тёплые пятна на полу
+            self.screen.blit(self.tex.glow_lamp, self.tex.glow_lamp.get_rect(center=(lx, 470)))
+        if op > 0:                                                                   # свет из открытой двери
+            self.spill.set_alpha(int(255 * op))
+            scr.blit(self.spill, (0, 0))
+        for x in range(cx - 120, cx + 120, 44):                                      # предупреждающая полоса перед дверью
+            pygame.draw.polygon(scr, (150, 126, 30), [(x, door_y + 6), (x + 24, door_y + 6), (x + 10, door_y + 24), (x - 14, door_y + 24)])
+        # стена с лифтом
+        pygame.draw.rect(scr, (24, 28, 32), (0, 0, SW, door_y))
+        for x in range(0, SW, 128):
+            pygame.draw.line(scr, (16, 20, 24), (x, 0), (x, door_y), 3)
+        pygame.draw.rect(scr, (34, 40, 44), (0, 24, SW, 10))
+        pygame.draw.rect(scr, (58, 64, 68), (0, 44, SW, 12))                         # трубы под потолком
+        pygame.draw.rect(scr, (8, 8, 10), (0, door_y - 6, SW, 8))                    # нижний край стены
+        pygame.draw.rect(scr, (10, 12, 14), (cx - 128, 56, 256, door_y - 52))        # шахта
+        pygame.draw.rect(scr, (176, 164, 124), (cx - 112, 70, 224, door_y - 70))     # пол кабины
+        for y in range(80, door_y, 34):
+            pygame.draw.line(scr, (140, 128, 92), (cx - 112, y), (cx + 112, y), 2)
+        for x in (cx - 56, cx, cx + 56):
+            pygame.draw.line(scr, (140, 128, 92), (x, 70), (x, door_y), 1)
+        for x in (cx - 106, cx + 106):                                               # поручни
+            pygame.draw.line(scr, (96, 100, 108), (x, 80), (x, door_y - 10), 5)
+            pygame.draw.line(scr, (190, 194, 202), (x - 1, 80), (x - 1, door_y - 10), 1)
+        pygame.draw.rect(scr, (236, 228, 188), (cx - 54, 84, 108, 26))               # плафон кабины
+        pygame.draw.rect(scr, (160, 152, 120), (cx - 54, 84, 108, 26), 2)
+        # табло этажей справа от двери: «-8», после «динь» — «-6»
+        pygame.draw.rect(scr, (10, 10, 12), (cx + 150, 214, 84, 40))
+        pygame.draw.rect(scr, (60, 64, 70), (cx + 150, 214, 84, 40), 2)
         lvl = "-8" if u < 3.0 else "-6"
-        lit = u >= 3.0 and int(t * 5) % 2 == 0 or u < 3.0 and u > 2.2 and int(t * 6) % 2 == 0
-        tx.draw_text(tx.f_mid, lvl, (255, 70, 50) if lit or u >= 3.0 else (150, 40, 30), (cx - 14, 166))
-        pygame.draw.polygon(scr, (255, 70, 50) if u >= 3.0 else (110, 30, 24), [(cx + 28, 176), (cx + 44, 176), (cx + 36, 160)])
-        inner = (cx - 110, 210, 220, gy - 210)
-        pygame.draw.rect(scr, (176, 164, 124), inner)                               # свет кабины
-        pygame.draw.rect(scr, (120, 110, 84), (cx - 110, 210, 220, 30))
-        if op > 0:                                                                  # световое пятно на полу
-            pygame.draw.ellipse(scr, (74, 70, 48), pygame.Rect(int(cx - 110 - 330 * op), gy - 8, int(330 * op + 110), 30))
-        hx_ = cx if u < 9.8 else cx - 100 * clamp((u - 9.8) / 1.4, 0.0, 1.0)         # Марк: в кабине, затем выходит
-        if 4.6 <= u < 12.0:                                                          # дальше Марк идёт следом за Леной (рисуется ниже)
-            side_person_rig(scr, self.tex.rigs["mark"], hx_, gy, -1, 1.0, walk=t * 8 if u > 9.8 and u < 11.2 else 0.0,
-                            hands_up=0.45 if 5.8 <= u < 9.4 else 0.0, expr=expr_of(False, worry=5.4 <= u < 9.4, ph=1.3), bob=0.9 * math.sin(t * 2.0 + 1))
-        pw = int(110 * (1 - op))
-        for x0 in (cx - 110, cx + 110 - pw):                                        # створки дверей
-            pygame.draw.rect(scr, (108, 114, 120), (x0, 210, pw, gy - 210))
-            pygame.draw.rect(scr, (70, 76, 82), (x0, 210, pw, gy - 210), 3)
-            pygame.draw.line(scr, (140, 146, 152), (x0 + pw // 2, 222), (x0 + pw // 2, gy - 12), 2)
-        if u >= 5.4 and u < 8.9:                                                    # красные точки прицелов на груди Марка
-            for dy in (-70, -58):
-                pygame.draw.circle(scr, (255, 40, 40), (int(hx_ - 4 + random.uniform(-2, 2)), int(gy + dy + random.uniform(-2, 2))), 3)
-        aim = clamp((u - 3.3) / 0.6, 0.0, 1.0) * (1.0 - clamp((u - 8.8) / 0.9, 0.0, 1.0))   # автоматы: вскинуты -> опущены
-        jolt = 1.0 if 3.0 <= u < 3.7 else 0.0
-        for sx, sw_ in ((400, 0.0), (510, 1.7)):
-            if sw_ == 0.0:                                                   # первый солдат: «Слышишь?.. Лифт!» и «Руки! Не двигаться!»
-                ex = expr_of(3.1 <= u < 4.4 or 6.0 <= u < 7.5, shout=6.0 <= u < 7.5, worry=3.0 <= u < 8.8)
-            else:                                                            # второй: «Оружие на изготовку!» и «Свои. Опустить оружие.»
-                ex = expr_of(4.4 <= u < 5.9 or 9.0 <= u < 10.5, shout=4.4 <= u < 5.9, worry=3.0 <= u < 8.8, ph=0.9)
-            side_person_rig(scr, self.tex.rigs["soldier"], sx, gy, 1, 1.0, rifle=True, aim=aim,
-                            lean=0.35 * jolt + 0.25 * aim + 0.1 * math.sin(t * 1.3 + sw_), expr=ex, bob=0.8 * math.sin(t * 2.0 + sw_))
-        run = clamp((u - 7.0) / 1.6, 0.0, 1.0)                                       # Лена вбегает слева
-        if u >= 7.0:
-            lx = -90 + 680 * run
-            face, walk = 1, t * 20
-            if u >= 8.6:
-                lx = 590 + 50 * clamp((u - 9.8) / 1.2, 0.0, 1.0)
-                walk = 0.0 if u < 9.8 or u > 11.0 else t * 8
-            if u >= 12.0:                                                            # уходят вместе влево
-                k = clamp((u - 12.0) / 3.2, 0.0, 1.0)
-                lx, face, walk = 640 - 740 * k, -1, t * 8
-            side_person_rig(scr, self.tex.rigs["lena"], lx, gy + 8, face, 1.0, walk=walk, hands_up=0.8 if 8.6 <= u < 9.8 else 0.0,
-                            expr=expr_of(7.6 <= u < 9.0 or 10.6 <= u < 12.3 or 12.5 <= u < 15.0, shout=7.6 <= u < 9.0, worry=9.0 <= u < 12.5, ph=0.4),
-                            bob=0.8 * math.sin(t * 2.0 + 2))
-        if u >= 12.0:                                                                # Марк идёт следом
+        lit = u >= 3.0 or (u > 2.2 and int(t * 6) % 2 == 0)
+        tx.draw_text(tx.f_mid, lvl, (255, 70, 50) if lit else (130, 36, 28), (cx + 192, 234))
+        pygame.draw.circle(scr, (255, 70, 50) if (u >= 3.0 and int(t * 5) % 2 == 0) else (90, 30, 24), (cx + 140, 234), 5)
+
+        # --- Марк: в кабине, затем выходит и идёт с Леной
+        mk = self.s.player
+        mx, my, mang, mmov = cx, 188.0, math.pi / 2, False
+        if u >= 9.8:
+            mmov = 9.8 <= u < 11.2
+            my = ease(188.0, 332.0, (u - 9.8) / 1.4)
+        if u >= 12.0:
             k = clamp((u - 12.0) / 3.2, 0.0, 1.0)
-            side_person_rig(scr, self.tex.rigs["mark"], 700 - 740 * k + 24, gy, -1, 1.0, walk=t * 8 + 1.2)
-        for bx in (40, 118):                                                         # мешки с песком на переднем плане
-            pygame.draw.ellipse(scr, (70, 62, 44), pygame.Rect(bx - 40, gy - 24, 100, 30))
-            pygame.draw.ellipse(scr, (96, 86, 62), pygame.Rect(bx - 36, gy - 26, 92, 24))
+            mx, my, mang, mmov = ease(cx, -90.0, k), ease(332.0, 352.0, min(1.0, k * 4)) + 0.0, math.pi, True
+        # --- солдаты: позы
+        A, B_ = (410.0, 470.0), (614.0, 470.0)
+        tgt = (cx, my)
+        a_door = [math.atan2(door_y + 4 - p_[1], cx - p_[0]) for p_ in (A, B_)]
+        a_mark = [math.atan2(my - p_[1], mx - p_[0]) for p_ in (A, B_)]
+        idle = [0.15, math.pi - 0.15]
+        alert = clamp((u - 3.0) / 0.35, 0.0, 1.0)                                    # резкий разворот к лифту
+        relax = clamp((u - 8.8) / 0.7, 0.0, 1.0)                                     # оружие отводят в стороны
+        sold = []
+        for i, p_ in enumerate((A, B_)):
+            tgt_ang = a_mark[i] if op > 0.3 else a_door[i]
+            ang = aang(idle[i], tgt_ang, alert)
+            ang = aang(ang, math.pi if i == 0 else 0.0, relax)
+            sold.append((p_, ang))
+        # --- Лена
+        run = clamp((u - 7.0) / 1.6, 0.0, 1.0)
+        lx, ly, lang, lwalk = -90.0, 640.0, -0.6, 0.0
+        if u >= 7.0:
+            lx, ly, lang, lwalk = ease(-90.0, 470.0, run), ease(640.0, 420.0, run), -0.55 - 0.45 * run, t * 20
+            if u >= 8.6:
+                lwalk = 0.0
+                lx, ly = 470.0, 420.0
+            if u >= 9.8:
+                k = clamp((u - 9.8) / 1.2, 0.0, 1.0)
+                lx, ly, lang, lwalk = ease(470.0, 512.0, k), ease(420.0, 378.0, k), -math.pi / 2, (t * 9 if k < 1 else 0.0)
+            if u >= 12.0:
+                k = clamp((u - 12.0) / 3.2, 0.0, 1.0)
+                lx, ly, lang, lwalk = ease(512.0, -90.0, k), ease(378.0, 392.0, min(1.0, k * 4)), math.pi, t * 9
+        # --- рисуем: Марк (под дверью), дверные створки, баррикада, солдаты, Лена
+        if u >= 4.4 and u < 12.0 or u >= 12.0:
+            pl = mk
+            pl.angle, pl.moving, pl.sprinting, pl.light_on, pl.battery = mang, mmov, False, True, 80.0
+            self.s.has_gun, self.s.hidden = False, False
+            shadow(mx, my, 24)
+            self.sprites.draw_player(mx, my, scr, zoom=2.5, open_hands=True)
+        pw = int(112 * (1 - op))
+        for x0 in (cx - 112, cx + 112 - pw):                                         # створки дверей
+            if pw > 0:
+                pygame.draw.rect(scr, (108, 114, 120), (x0, door_y - 14, pw, 20))
+                pygame.draw.rect(scr, (70, 76, 82), (x0, door_y - 14, pw, 20), 3)
+                pygame.draw.line(scr, (140, 146, 152), (x0 + pw // 2, door_y - 10), (x0 + pw // 2, door_y), 2)
+        for row, y0 in ((0, 560), (1, 578)):                                         # баррикада из мешков с песком
+            for x in range(240 + row * 26, 790, 52):
+                pygame.draw.ellipse(scr, (44, 38, 26), pygame.Rect(x - 28, y0 - 14, 60, 34))
+                pygame.draw.ellipse(scr, (96, 86, 62), pygame.Rect(x - 26, y0 - 16, 56, 30))
+        for (cx_, cy_) in ((80, 620), (940, 610)):                                   # ящики
+            pygame.draw.rect(scr, (30, 24, 16), (cx_ - 40, cy_ - 34, 80, 68))
+            pygame.draw.rect(scr, (98, 76, 46), (cx_ - 37, cy_ - 31, 74, 62))
+            pygame.draw.line(scr, (60, 46, 28), (cx_ - 37, cy_ - 31), (cx_ + 37, cy_ + 31), 3)
+            pygame.draw.line(scr, (60, 46, 28), (cx_ + 37, cy_ - 31), (cx_ - 37, cy_ + 31), 3)
+        for i, ((px_, py_), ang) in enumerate(sold):
+            shadow(px_, py_, 28)
+            if u < 3.0:                                                              # болтают: головы осматриваются
+                head = 0.45 * math.sin(t * 0.9 + i * 2.0)
+            elif relax > 0:                                                          # смотрят на Лену
+                head = clamp((math.atan2(ly - py_, lx - px_) - ang + math.pi) % (2 * math.pi) - math.pi, -1.2, 1.2)
+            else:
+                head = 0.0
+            pop = 1.0 + (0.08 * (1 - alert) if 3.0 <= u < 3.4 else 0.0)
+            draw_person(scr, self.tex.persons["soldier"], px_, py_, ang, head, 1.05 * pop)
+        if u >= 7.0:
+            shadow(lx, ly, 24)
+            sw_ = 1.0 + 0.04 * math.sin(lwalk)
+            draw_person(scr, self.tex.persons["lena"], lx, ly + 2 * math.sin(lwalk * 0.5), lang + 0.06 * math.sin(lwalk * 0.5), 0.0, 1.0 * sw_)
+        # красные лазерные указки от автоматов: видны, пока оружие нацелено
+        if 3.5 <= u < 8.9:
+            for (px_, py_), ang in sold:
+                mzx, mzy = px_ + math.cos(ang) * 50, py_ + math.sin(ang) * 50
+                ex_, ey_ = (mx, my + 2) if op > 0.3 else (cx + (px_ - cx) * 0.05, door_y + 4)
+                pygame.draw.line(scr, (255, 50, 50), (mzx, mzy), (ex_, ey_), 1)
+                pygame.draw.circle(scr, (255, 90, 90), (int(ex_), int(ey_)), 3)
         if 3.0 <= u < 3.15:                                                          # вспышка при «динь»
-            self.flash((255, 255, 255), 160)
+            self.flash((255, 255, 255), 150)
         if u > 15.0:
             self.flash((0, 0, 0), 255 * clamp((u - 15.0) / 1.0, 0.0, 1.0))
 
@@ -7276,7 +7075,8 @@ class Game:
         self.pounce_view = PounceRenderer(cfg=self.cfg, clock=self.clock, pounce=self.pounce, scare=self.scare, s=self.s,
                                           screen=self.screen, sprites=self.sprites, tex=self.tex)
         self.cin = CinematicSystem(audio=self.audio, s=self.s)
-        self.cin_view = CinematicRenderer(cin=self.cin, clock=self.clock, screen=self.screen, tex=self.tex, text=self.text)
+        self.cin_view = CinematicRenderer(cin=self.cin, clock=self.clock, screen=self.screen, tex=self.tex, text=self.text,
+                                          sprites=self.sprites, s=self.s)
         self.evac = EvacSystem(audio=self.audio, note=self.note, s=self.s)
         self.fx = PostFX(atmo=self.atmo, cfg=self.cfg, clock=self.clock, s=self.s, screen=self.screen, tex=self.tex)
         self.hud = Hud(cfg=self.cfg, clock=self.clock, minimap=self.minimap, note=self.note, s=self.s, screen=self.screen, text=self.text)
