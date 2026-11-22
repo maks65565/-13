@@ -23,6 +23,8 @@
     ФИНАЛЬНЫЙ БОС: ПКМ — выстрел в такт (кольцо = цель), Q — перезарядка, ПРОБЕЛ — парирование атаки
     F8 / F9 / F10   — ЧИТЫ: F8 — следующий этаж, F9 — все ключи + заряд + телепорт к двери, F10 — сразу финал
     TAB             — архив прочитанных записок
+    АНИМАЦИЯ        — шаг героя и монстра идёт по пройденному пути (ноги не скользят), плавный старт/остановка, дыхание, испуг;
+                      у монстра позы: крадётся / принюхивается / бросок / оглушён; звук шагов — в такт ногам
     ВНИЗ НА -10     — на этаже -3 лифт срывается и падает в шахту: найди динамит и взорви завал (секретная концовка)
     АВАНПОСТ -6     — полноценный этаж (казарма, пост связи, арсенал, столовая, лаборатория, лазарет), у лифта сцена (вид сверху) с солдатами и Леной;
                       консоль дальней связи (вызови вертолёт и дождись его; монстра на аванпосте нет), антидот и ампула сыворотки:
@@ -51,6 +53,7 @@
                   StruggleFight (схватка: QTE), PrologueSystem (вступительная кат-сцена),
                   CinematicSystem (падение лифта, подрыв завала), CinematicRenderer (их рисование),
                   PounceSystem / PounceRenderer (бросок монстра на камеру в момент поимки, как у Фокси),
+                  AnimationSystem (PlayerAnim, MonsterAnim: фазы шага, плавные переходы, позы),
                   EvacSystem (эвакуация с аванпоста)
     Ресурсы       Textures (процедурные картинки), SoundBank (синтез звуков)
     Отрисовка     TextRenderer, Camera, WorldPainter, LightingRenderer, SpriteRenderer, PostFX, Hud, Minimap,
@@ -1366,12 +1369,23 @@ def make_hero_parts():
     return P
 
 
-def draw_person(scr, parts, x, y, body_ang, head_rel=0.0, k=0.5):
-    """Человек сверху: тело повёрнуто по body_ang, голова — на head_rel относительно тела (следит за игроком)."""
+def draw_person(scr, parts, x, y, body_ang, head_rel=0.0, k=0.5, walk=0.0, amp=0.0, boot=None):
+    """
+    Человек сверху: тело повёрнуто по body_ang, голова — на head_rel относительно тела (следит за игроком).
+    При ходьбе (amp > 0, boot — текстура ботинка) из-под тела по очереди выступают ботинки, поднятый чуть крупнее.
+    """
+    c, s_ = math.cos(body_ang), math.sin(body_ang)
+    if boot is not None and amp > 0.02:
+        for side in (-1, 1):
+            ph = walk + (0.0 if side > 0 else math.pi)
+            fwd = math.sin(ph) * 13 * amp * k
+            lift = max(0.0, math.cos(ph)) * amp
+            fx, fy = x - s_ * 31 * side * k + c * fwd, y + c * 31 * side * k + s_ * fwd
+            place_part(scr, boot, (20, 14), (fx, fy), body_ang, 0.76 * k * (1.0 + 0.14 * lift))
     b = pygame.transform.rotozoom(parts["body"], -math.degrees(body_ang), k)
     scr.blit(b, b.get_rect(center=(int(x), int(y))))
     ha = body_ang + head_rel
-    hx, hy = x + 10 * k * math.cos(body_ang), y + 10 * k * math.sin(body_ang)               # шея: чуть впереди центра тела
+    hx, hy = x + 10 * k * c, y + 10 * k * s_                                                 # шея: чуть впереди центра тела
     h = pygame.transform.rotozoom(parts["head"], -math.degrees(ha), k)
     scr.blit(h, h.get_rect(center=(int(hx - 9 * k * math.cos(ha)), int(hy - 9 * k * math.sin(ha)))))
 
@@ -1634,7 +1648,7 @@ class SoundBank:
             cp = t % 4.0
             return (math.sin(tau * 36 * q) * math.exp(-q * 5) * 0.5
                     + 0.18 * math.sin(tau * 55 * t) * (0.6 + 0.4 * math.sin(tau * 0.25 * t)) + 0.10 * math.sin(tau * 110.5 * t)
-                    + random.uniform(-1, 1) * math.exp(-hp * 3.0) * 0.12 * (1.0 if hp < 1.2 else 0.0)
+                    + random.uniform(-1, 1) * math.exp(-hp * 3.0) * 0.12 * (1.0 if hp < 1.2 else 0.0) * min(1.0, hp * 20)
                     + (math.sin(tau * 312 * cp) + 0.6 * math.sin(tau * 541 * cp)) * math.exp(-cp * 5) * 0.14)
 
         arp5 = (220.0, 262.0, 330.0, 262.0, 196.0, 247.0, 294.0, 247.0)
@@ -1714,7 +1728,7 @@ class SoundBank:
         def amb_reactor(t):                      # реактор: низкий гул и шипение пара
             q = t % 3.0
             return (0.20 * math.sin(tau * 28 * t) + 0.10 * math.sin(tau * 56.5 * t)
-                    + random.uniform(-1, 1) * 0.07 * math.exp(-q * 2.0) * (1.0 if q < 1.5 else 0.4))
+                    + random.uniform(-1, 1) * 0.07 * math.exp(-q * 2.0) * (1.0 if q < 1.5 else 0.4) * min(1.0, q * 20))
 
         def amb_outpost(t):                      # аванпост: генератор и обрывки радио
             gate = 1.0 if int(t * 7) % 5 < 2 else 0.0
@@ -1913,6 +1927,129 @@ class Audio:
 
 
 # ------------------------------------------------------------------ СУЩНОСТИ
+class PlayerAnim:
+    """Анимационное состояние героя (данные): фаза шага, плавность движения, наклон, дыхание, испуг."""
+
+    def __init__(self):
+        self.stride = 0.0        # фаза шага (рад): растёт с ПРОЙДЕННЫМ путём — ноги не «скользят» по полу
+        self.amp = 0.0           # 0..1 плавная степень движения: при остановке ноги возвращаются без рывка
+        self.run = 0.0           # 0..1 плавный бег (наклон, размах рук)
+        self.lean = 0.0          # наклон корпуса вперёд
+        self.turn = 0.0          # сглаженная угловая скорость: при резком повороте корпус запаздывает
+        self.breath_amp = 0.018  # глубина дыхания: растёт, когда герой устал
+        self.flinch = 0.0        # испуг: толчок корпуса назад, затухает
+        self.steps = 0           # сколько раз нога коснулась пола (звук шагов берётся отсюда)
+        self.pos = None
+        self.ang = None
+
+    @classmethod
+    def from_flags(cls, p, t):
+        """Для кат-сцен и скримеров, где героя ведёт сцена: фаза берётся из времени, степень — из флагов moving/sprinting."""
+        a = cls()
+        a.amp = 1.0 if p.moving else 0.0
+        a.run = 1.0 if p.sprinting else 0.0
+        a.stride = t * (13.0 if p.sprinting else 8.5)
+        a.lean = 0.35 * a.run + 0.1 * a.amp
+        return a
+
+
+class MonsterAnim:
+    """Анимационное состояние монстра (данные): походка по пути, плавные переходы поз (крадётся / принюхивается / бросок / оглушён)."""
+
+    RATE = 5.0
+
+    def __init__(self):
+        self.stride = 0.0
+        self.steps = 0
+        self.amp = 0.0
+        self.w = {"stalk": 1.0, "sniff": 0.0, "rush": 0.0, "stun": 0.0}      # веса поз (сумма ≈ 1), меняются плавно
+        self.lunge = 0.0                                                    # рывок при обнаружении героя, затухает
+        self.sweep = random.uniform(0, 6.28)
+        self.pos = None
+        self.state = None
+
+    @classmethod
+    def synth(cls, state, anim):
+        """Для боссa и кат-сцен: поза целиком по состоянию, фаза — по времени anim."""
+        a = cls()
+        tgt = "rush" if state == "chase" else ("sniff" if state in ("investigate", "search") else "stalk")
+        a.w = {k: (1.0 if k == tgt else 0.0) for k in a.w}
+        a.stride = anim * (12.0 if state == "chase" else 3.2)
+        a.amp = 1.0
+        a.sweep = anim
+        return a
+
+    def update(self, m, dt):
+        moved = 0.0 if self.pos is None else math.hypot(m.x - self.pos[0], m.y - self.pos[1])
+        self.pos = (m.x, m.y)
+        self.amp += ((1.0 if moved / max(dt, 1e-4) > 8.0 else 0.0) - self.amp) * min(1.0, dt * 10)
+        prev = self.stride
+        self.stride += moved / 120.0 * 2 * math.pi
+        self.steps += int(self.stride // math.pi) - int(prev // math.pi)
+        if m.stun > 0:
+            tgt = "stun"
+        elif m.state == "chase":
+            tgt = "rush"
+        elif m.state in ("investigate", "search"):
+            tgt = "sniff"
+        else:
+            tgt = "stalk"
+        for k in self.w:
+            self.w[k] += ((1.0 if k == tgt else 0.0) - self.w[k]) * min(1.0, dt * self.RATE)
+        self.lunge = max(0.0, self.lunge - dt * 2.0)
+        if self.state is not None and self.state != "chase" and m.state == "chase":
+            self.lunge = 1.0                                                 # заметил: «встаёт на дыбы» (после затухания — иначе рывок гас бы в тот же кадр)
+        self.state = m.state
+        self.sweep += dt * (3.0 if tgt == "sniff" else 1.2)
+
+    def params(self, t):
+        """Смесь параметров поз по весам: reach, spread, jaw, scale, sway, tent, rate, twitch."""
+        w = self.w
+        return {
+            "reach": w["stalk"] * 0.95 + w["sniff"] * 0.8 + w["rush"] * 1.35 + w["stun"] * 0.5,
+            "spread": w["stalk"] * 1.0 + w["sniff"] * 1.5 + w["rush"] * 0.8 + w["stun"] * 1.7,
+            "jaw": w["stalk"] * 0.26 + w["sniff"] * (0.34 + 0.12 * math.sin(t * 7)) + w["rush"] * 0.5 + w["stun"] * 0.2,
+            "scale": w["stalk"] * 0.98 + w["sniff"] * 1.0 + w["rush"] * 1.06 + w["stun"] * 0.9,
+            "sway": w["sniff"] * 0.30 * math.sin(self.sweep * 1.6) + w["stun"] * 0.05 * math.sin(t * 23) + w["rush"] * 0.04 * math.sin(self.stride),
+            "tent": w["stalk"] * 0.8 + w["sniff"] + w["rush"] * 1.6 + w["stun"] * 0.4,
+            "rate": w["stalk"] * 3.2 + w["sniff"] * 4.0 + w["rush"] * 12.0 + w["stun"] * 2.0,
+            "twitch": w["stun"],
+        }
+
+
+class AnimationSystem:
+    """Анимация персонажей (ответственность: фазы шага по пройденному пути, плавные переходы, дыхание, испуг героя)."""
+
+    def __init__(self, s):
+        self.s = s
+
+    def update(self, dt):
+        s = self.s
+        p, m = s.player, s.monster
+        a = p.ani
+        if a.pos is None:
+            a.pos, a.ang = (p.x, p.y), p.angle
+        dist = math.hypot(p.x - a.pos[0], p.y - a.pos[1])                    # реальный путь (упёрся в стену — ноги стоят)
+        a.pos = (p.x, p.y)
+        moving = dist / max(dt, 1e-4) > 12.0
+        a.amp += ((1.0 if moving else 0.0) - a.amp) * min(1.0, dt * 14)
+        a.run += ((1.0 if (p.sprinting and moving) else 0.0) - a.run) * min(1.0, dt * 9)
+        prev = a.stride
+        a.stride += dist / (140.0 + 10.0 * a.run) * 2 * math.pi
+        a.steps += int(a.stride // math.pi) - int(prev // math.pi)
+        dang = (p.angle - a.ang + math.pi) % (2 * math.pi) - math.pi
+        a.ang = p.angle
+        a.turn += (clamp(dang / max(dt, 1e-4), -12.0, 12.0) - a.turn) * min(1.0, dt * 10)
+        a.lean += ((0.35 * a.run + 0.1 * a.amp) - a.lean) * min(1.0, dt * 8)
+        tired = 1.0 - clamp(p.stamina / 100.0, 0.0, 1.0)
+        a.breath_amp = 0.018 + 0.035 * tired + 0.02 * a.run
+        a.flinch = max(0.0, a.flinch - dt * 3.0)
+        if m.active:
+            m.ani.update(m, dt)
+            if m.ani.lunge > 0.98 and math.hypot(m.x - p.x, m.y - p.y) < 560:    # заметил — герой вздрагивает
+                a.flinch = 1.0
+
+
 class Player:
     r = 11
 
@@ -1928,6 +2065,7 @@ class Player:
         self.moving = False
         self.sprinting = False
         self.regen_wait = 0.0
+        self.ani = PlayerAnim()
 
 
 class Monster:
@@ -1950,6 +2088,7 @@ class Monster:
         self.lost = 0.0
         self.stun = 0.0                    # оглушён после того, как игрок вырвался
         self.active = True                 # False — монстра на этаже нет (аванпост): не двигается, не рисуется, не ловит
+        self.ani = MonsterAnim()
 
     # --- навигация
     def set_goal(self, g, cx, cy):
@@ -2687,8 +2826,8 @@ class Atmosphere:
         self.jit_t = 0.0
         self.heart_t = 0.0
         self.creak_t = 0.0
-        self.step_t = 0.0
-        self.mstep_t = 0.0
+        self.last_steps = 0
+        self.last_msteps = 0
         self.step_alt = False
         self.breath_t = 0.0
         self.glitch_t = 0.0
@@ -2699,8 +2838,8 @@ class Atmosphere:
 
     def reset(self):
         """Новый забег: обнуляет таймеры и заново рассыпает пыль."""
-        self.step_t = 0.0
-        self.mstep_t = 0.0
+        self.last_steps = 0
+        self.last_msteps = 0
         self.creak_t = random.uniform(10, 25)
         self.breath_t = 0.0
         self.glitch_t = 0.0
@@ -2775,19 +2914,16 @@ class Atmosphere:
 
 
         # --- шаги, скрипы, сирена
-        if p.moving:
-            self.step_t -= dt
-            if self.step_t <= 0:
-                metal = self.s.plan.get("metal")                 # железный пол звучит иначе
-                snd = ("step_metal" if self.step_alt else "step_metal2") if metal else ("step" if self.step_alt else "step2")
-                self.audio.play(snd, vol=0.55 if p.sprinting else 0.28)
-                self.step_alt = not self.step_alt
-                self.step_t = 0.26 if p.sprinting else 0.42
-        if d < 650 and m.state != "search":
-            self.mstep_t -= dt
-            if self.mstep_t <= 0:
+        if p.ani.steps != self.last_steps:                         # нога коснулась пола: звук шага ровно в такт анимации
+            self.last_steps = p.ani.steps
+            metal = self.s.plan.get("metal")                       # железный пол звучит иначе
+            snd = ("step_metal" if self.step_alt else "step_metal2") if metal else ("step" if self.step_alt else "step2")
+            self.audio.play(snd, vol=0.55 if p.sprinting else 0.28)
+            self.step_alt = not self.step_alt
+        if m.ani.steps != self.last_msteps:                        # шаг монстра — в такт его походке
+            self.last_msteps = m.ani.steps
+            if d < 650 and m.state != "search":
                 self.audio.play("mstep", vol=clamp(1 - d / 650, 0.04, 1.0) ** 1.4)
-                self.mstep_t = 0.42 if m.state == "chase" else 0.8
         self.breath_t -= dt
         if d < 340 and m.state != "chase" and self.breath_t <= 0:       # слышно дыхание рядом
             self.audio.play("breath", vol=clamp(1 - d / 340, 0.1, 1.0))
@@ -3474,39 +3610,53 @@ class SpriteRenderer:
         Игрок: текстурный корпус (рюкзак, куртка, шапка), ботинки со шнуровкой, рукав с перчаткой и фонариком, при желании пистолет.
         Детали запечены в 3-кратном размере. zoom > 1 — крупный план (скример, схватка): корпус берётся из текстуры высокого разрешения.
         open_hands — безоружен: вторая рука вытянута вперёд пустой (кат-сцены).
+        Анимация: в игре — из PlayerAnim (шаг по пройденному пути, плавный старт и остановка, дыхание, испуг); в сценах — из флагов и времени.
         """
         z = zoom
         k = z / 3.0
         HP = self.tex.hparts
+        t = self.clock.t
         p, scr = self.s.player, (self.screen if target is None else target)
+        ani = p.ani if (target is None and hasattr(p, "ani")) else PlayerAnim.from_flags(p, t)
+        amp, run, st = ani.amp, ani.run, ani.stride
         ca, sa = math.cos(p.angle), math.sin(p.angle)
         px, py = -sa, ca
-        moving = p.moving and not self.s.hidden
-        bob = math.sin(self.clock.t * (19 if p.sprinting else 11)) if moving else 0.0
         pygame.draw.circle(scr, (10, 10, 12), (sx + 2 * z, sy + 3 * z), 13 * z)
-        for side in (-1, 1):                                       # ботинки: шаг вперёд-назад
-            sw = bob * 7 * side * z
-            fx, fy = sx + px * 5 * side * z + ca * sw, sy + py * 5 * side * z + sa * sw
-            place_part(scr, HP["boot"], (20, 14), (fx + ca * z, fy + sa * z), p.angle, k * 0.95)
-        breath = 1 + 0.025 * abs(bob)
-        tex, kk = (self.tex.player_hi, 0.31 * z * breath) if z > 1.5 else (self.tex.player_base, 0.62 * z * breath)
-        body = pygame.transform.rotozoom(tex, -math.degrees(p.angle), kk)
-        scr.blit(body, body.get_rect(center=(int(sx), int(sy))))
-        hx, hy = sx + ca * 15 * z + px * 6 * z + ca * bob * 1.5 * z, sy + sa * 15 * z + py * 6 * z + sa * bob * 1.5 * z
-        shp = (sx + px * 8 * z, sy + py * 8 * z)                                    # рука с фонариком: от плеча к кисти
+        for side in (-1, 1):                                       # ноги идут по фазе шага; поднятая нога в замахе чуть крупнее
+            ph = st + (0.0 if side > 0 else math.pi)
+            fwd = math.sin(ph) * (8.0 + 4.0 * run) * amp * z
+            lift = max(0.0, math.cos(ph)) * amp
+            lat = (12.5 * side + 0.8 * math.sin(st) * amp) * z                 # ботинки выглядывают по бокам корпуса
+            fx, fy = sx + px * lat + ca * fwd, sy + py * lat + sa * fwd
+            place_part(scr, HP["boot"], (20, 14), (fx + ca * z, fy + sa * z), p.angle, k * 0.95 * (1.0 + 0.14 * lift))
+        breath = 1.0 + ani.breath_amp * math.sin(t * (2.2 + 14.0 * ani.breath_amp))
+        bob = 1.0 + 0.035 * amp * abs(math.sin(st))                # корпус «подпрыгивает» дважды за цикл шага
+        twist = 0.07 * math.sin(st) * amp * (1.0 + 0.6 * run)      # плечи поворачиваются в такт шагу
+        shift = 0.025 * math.sin(t * 0.7) * (1.0 - amp)            # в покое переносит вес с ноги на ногу
+        lag = clamp(ani.turn, -8.0, 8.0) * 0.012                   # при резком повороте корпус запаздывает
+        ang = p.angle + twist + shift - lag + ani.flinch * 0.35
+        lean = (ani.lean * 3.0 - ani.flinch * 4.0) * z             # бег — вперёд, испуг — назад
+        bx, by = sx + ca * lean, sy + sa * lean
+        tex, kk = (self.tex.player_hi, 0.31 * z) if z > 1.5 else (self.tex.player_base, 0.62 * z)
+        body = pygame.transform.rotozoom(tex, -math.degrees(ang), kk * breath * bob)
+        scr.blit(body, body.get_rect(center=(int(bx), int(by))))
+        swing = math.sin(st + math.pi) * amp * (2.2 + 1.8 * run) * z          # рука с фонарём качается против левой ноги
+        side_sw = 0.8 * math.sin(st) * amp * z
+        hx, hy = sx + ca * (15 * z + swing + lean * 0.6) + px * (6 * z + side_sw), sy + sa * (15 * z + swing + lean * 0.6) + py * (6 * z + side_sw)
+        shp = (sx + px * 8 * z + ca * lean * 0.5, sy + py * 8 * z + sa * lean * 0.5)                  # рука с фонариком: от плеча к кисти
         a1 = math.atan2(hy - shp[1], hx - shp[0])
         ka = 0.7 * k
         place_part(scr, HP["arm_flash"], (8, 18), shp, a1, ka)
         lit = p.light_on and p.battery > 0
         lens = (shp[0] + math.cos(a1) * 104 * ka, shp[1] + math.sin(a1) * 104 * ka)   # линза: горит, когда фонарь включён
         pygame.draw.circle(scr, (255, 244, 200) if lit else (80, 80, 76), lens, 2.6 * z)
+        sh2 = (sx - px * 8 * z + ca * lean * 0.5, sy - py * 8 * z + sa * lean * 0.5)
+        sw2 = -swing * 0.8
         if self.s.has_gun:                                         # пистолет во второй руке
-            sh2 = (sx - px * 8 * z, sy - py * 8 * z)
-            hand2 = (sx - px * 4 * z + ca * 11 * z, sy - py * 4 * z + sa * 11 * z)
+            hand2 = (sx - px * 4 * z + ca * (11 * z + sw2), sy - py * 4 * z + sa * (11 * z + sw2))
             place_part(scr, HP["arm_gun"], (8, 18), sh2, math.atan2(hand2[1] - sh2[1], hand2[0] - sh2[0]), 0.6 * k)
         elif open_hands:
-            sh2 = (sx - px * 8 * z, sy - py * 8 * z)
-            hand2 = (sx - px * 6 * z + ca * 15 * z, sy - py * 6 * z + sa * 15 * z)
+            hand2 = (sx - px * 6 * z + ca * (15 * z + sw2), sy - py * 6 * z + sa * (15 * z + sw2))
             place_part(scr, HP["arm_plain"], (8, 18), sh2, math.atan2(hand2[1] - sh2[1], hand2[0] - sh2[0]), ka)
 
     def draw_pickups(self, camx, camy):
@@ -3621,7 +3771,8 @@ class SpriteRenderer:
                 else:
                     want = 0.45 * math.sin(t * 0.6 + n["x"] * 0.01)                    # иначе осматривается
                 n["hrel"] = n.get("hrel", 0.0) + (want - n.get("hrel", 0.0)) * 0.12
-                draw_person(scr, self.tex.persons[n["kind"]], x, y, n["ang"], n["hrel"], 0.46)
+                draw_person(scr, self.tex.persons[n["kind"]], x, y, n["ang"] + 0.03 * math.sin(t * 0.5 + n["y"] * 0.01), n["hrel"],
+                            0.46 * (1.0 + 0.014 * math.sin(t * 1.7 + n["x"] * 0.01)))                # дышит и переминается
         if s.console_cell is not None:
             x, y = (s.console_cell[0] + 0.5) * TILE - camx, (s.console_cell[1] + 0.5) * TILE - camy
             if -60 < x < SW + 60 and -60 < y < SH + 60:
@@ -4229,6 +4380,7 @@ class FinalCutscene:
         p.x, p.y, p.angle = 504.0, 700.0, -math.pi / 2
         p.light_on, p.battery, p.noise = True, 100.0, 0.0
         m.x, m.y, m.facing, m.state, m.anim = 504.0, 760.0, -math.pi / 2, "chase", 0.0
+        m.ani = MonsterAnim.synth("chase", 0.0)
         self.s.has_gun = False
         self.s.hidden = False
         self.cs_t = 0.0
@@ -4303,6 +4455,7 @@ class FinalCutscene:
             m.x = 504.0 + math.sin(t * 3.0) * 4
             m.facing = -math.pi / 2
             m.anim += dt
+            m.ani = MonsterAnim.synth("chase", m.anim)
 
         if t >= 5.7 and "shot" not in ev:           # ВЫСТРЕЛ В ПОТОЛОК
             ev.add("shot")
@@ -4360,6 +4513,7 @@ class FinalCutscene:
         if "burst" in ev:                            # выбрался и идёт на игрока
             m.facing = -math.pi / 2
             m.anim += dt
+            m.ani = MonsterAnim.synth("chase", m.anim)
             m.y -= (0.0 if t < 10.0 else 110.0) * dt
             m.x = 504.0 + math.sin(t * 3.0) * 4
 
@@ -4728,20 +4882,28 @@ class MonsterRenderer:
 
     def paint(self, scr, m, sx, sy, scream=False, zoom=1.0):
         """
-        Монстр на поверхности scr: текстурное тело/череп (запечены в Textures), текстурные руки с когтями и челюсти,
-        анимированные щупальца и позвоночник. zoom > 1 — крупный план (босс): все размеры растут, берётся текстура высокого разрешения.
+        Монстр на поверхности scr: текстурное тело/череп, текстурные руки с когтями и челюсти, щупальца и позвоночник.
+        Позы берутся из MonsterAnim (плавно смешиваются): КРАДЁТСЯ (низко, руки свободно), ПРИНЮХИВАЕТСЯ (раскачивает корпус,
+        руки в стороны, пасть шевелится), БРОСОК (тянется вперёд, руки вытянуты, пасть шире), ОГЛУШЁН (судороги, руки висят).
+        Шаг — по пройденному пути. zoom > 1 — крупный план (босс).
         """
         z = zoom
         t = self.clock.t
+        A = getattr(m, "ani", None) or MonsterAnim.synth(m.state, m.anim)
+        P_ = A.params(t)
         chase = m.state == "chase"
-        if chase:                                            # дёргается, как будто кости не слушаются
-            sx += random.uniform(-1.6, 1.6) * z
-            sy += random.uniform(-1.6, 1.6) * z
-        f = m.facing
+        tw = P_["twitch"]
+        if chase or tw > 0.05:                               # дёргается, как будто кости не слушаются; оглушённый бьётся в судорогах
+            j = (1.6 if chase else 0.0) + 2.2 * tw
+            sx += random.uniform(-j, j) * z
+            sy += random.uniform(-j, j) * z
+        f = m.facing + P_["sway"]
         cf, sf = math.cos(f), math.sin(f)
         px, py = -sf, cf
-        rate = 12 if chase else 3.2
-        ph = m.anim * rate
+        ph = A.stride                                         # фаза шага по пройденному пути
+        act = 0.35 + 0.65 * A.amp                             # стоя — лишь лёгкое покачивание
+        tph = t * P_["rate"]                                  # щупальца живут по времени
+        lunge = A.lunge
         breath = 1.0 + 0.06 * math.sin(t * 2.2)
         P = self.tex.mparts
         dark, bone = (58, 44, 44), (226, 218, 196)
@@ -4755,8 +4917,8 @@ class MonsterRenderer:
             a0 = math.pi + (k - 1.5) * 0.45
             pts = [(sx - cf * 8 * z, sy - sf * 8 * z)]
             for i in range(1, 7):
-                wv = math.sin(ph * 0.7 + i * 0.9 + k * 1.7) * (2.5 + i * 0.7)
-                d = i * 6.5
+                wv = math.sin(tph * 0.7 + i * 0.9 + k * 1.7) * (2.5 + i * 0.7) * P_["tent"]
+                d = i * 6.5 * (1.0 + 0.12 * lunge)
                 ax, ay = math.cos(f + a0), math.sin(f + a0)
                 pts.append((sx - cf * 8 * z + (ax * d - ay * wv * 0.4) * z, sy - sf * 8 * z + (ay * d + ax * wv * 0.4) * z))
             pygame.draw.lines(scr, (22, 14, 16), False, pts, w(5))
@@ -4767,7 +4929,7 @@ class MonsterRenderer:
             pygame.draw.circle(scr, (140, 28, 28), (int(pts[-1][0]), int(pts[-1][1])), max(2, int(2 * z)))
         # позвоночник: цепочка позвонков, изгибающаяся волной
         for i in range(4, 0, -1):
-            wv = math.sin(ph * 0.5 + i * 0.8) * 3
+            wv = math.sin(tph * 0.5 + i * 0.8) * 3
             bx = sx - cf * (7 + i * 7) * z + px * wv * z
             by = sy - sf * (7 + i * 7) * z + py * wv * z
             pygame.draw.circle(scr, (24, 16, 16), (bx, by), (10 - i) * z)
@@ -4775,27 +4937,29 @@ class MonsterRenderer:
             pygame.draw.circle(scr, bone, (bx - cf * 2 * z, by - sf * 2 * z), max(1.0, 2 * z))
         # задние тонкие ручки подёргиваются
         for side in (-1, 1):
-            tw = math.sin(ph * 1.9 + side) * 5
+            tw_ = math.sin(ph * 1.9 + side) * 5 * act + random.uniform(-2, 2) * tw
             a = (sx - cf * 4 * z + px * 9 * side * z, sy - sf * 4 * z + py * 9 * side * z)
-            b = (a[0] - cf * 10 * z + px * (7 + tw) * side * z, a[1] - sf * 10 * z + py * (7 + tw) * side * z)
+            b = (a[0] - cf * 10 * z + px * (7 + tw_) * side * z, a[1] - sf * 10 * z + py * (7 + tw_) * side * z)
             limb_between(scr, P["arm_fore"], (4, 15), (84, 15), a, b, 0.7)
-        # длинные передние руки: плечо, предплечье, кисть с когтями (текстурные части)
-        reach = 1.35 if chase else 1.0
+        # длинные передние руки: плечо, предплечье, кисть с когтями (текстурные части); поза задаёт вылет и разброс
+        reach = P_["reach"] * (1.0 + 0.25 * lunge)
+        spread = P_["spread"]
         for side in (-1, 1):
-            sw = math.sin(ph + (0 if side > 0 else math.pi))
+            sw = math.sin(ph + (0 if side > 0 else math.pi)) * act
+            jx, jy = random.uniform(-1, 1) * tw * 2.0 * z, random.uniform(-1, 1) * tw * 2.0 * z
             sh = (sx + px * 11 * side * breath * z, sy + py * 11 * side * breath * z)
-            el = (sh[0] + (cf * 16 * reach + px * side * (8 + 3 * sw)) * z, sh[1] + (sf * 16 * reach + py * side * (8 + 3 * sw)) * z)
-            hd = (el[0] + (cf * (22 + 9 * sw) * reach - px * side * 5) * z, el[1] + (sf * (22 + 9 * sw) * reach - py * side * 5) * z)
+            el = (sh[0] + (cf * 16 * reach + px * side * (8 * spread + 3 * sw)) * z + jx, sh[1] + (sf * 16 * reach + py * side * (8 * spread + 3 * sw)) * z + jy)
+            hd = (el[0] + (cf * (22 + 9 * sw) * reach - px * side * 5) * z + jx, el[1] + (sf * (22 + 9 * sw) * reach - py * side * 5) * z + jy)
             limb_between(scr, P["arm_up"], (6, 20), (52, 20), sh, el, 1.0)
             limb_between(scr, P["arm_fore"], (4, 15), (84, 15), el, hd, 1.0)
-            place_part(scr, P["claw"], (8, 48), hd, f + side * 0.12 * sw, 0.17 * reach * z)
+            place_part(scr, P["claw"], (8, 48), hd, f + side * 0.12 * sw, 0.17 * max(reach, 0.8) * z)
         # текстурное тело и череп (рёбра, мышцы, швы, шипы — всё внутри запечённой картинки)
-        tex, kk = (self.tex.monster_hi, 0.31 * z * breath) if z > 1.5 else (self.tex.monster_base, 0.62 * z * breath)
-        body = pygame.transform.rotozoom(tex, -math.degrees(f), kk)
+        tex, kk = (self.tex.monster_hi, 0.31 * z) if z > 1.5 else (self.tex.monster_base, 0.62 * z)
+        body = pygame.transform.rotozoom(tex, -math.degrees(f), kk * breath * P_["scale"] * (1.0 + 0.15 * lunge))
         scr.blit(body, body.get_rect(center=(int(sx), int(sy))))
         # пасть раскрыта: две текстурные челюсти с игольчатыми зубами и дёснами
         hx, hy = sx + cf * 14 * z, sy + sf * 14 * z
-        open_ = 0.30 + 0.12 * math.sin(ph * 0.8) + (0.55 if scream else 0.0)
+        open_ = P_["jaw"] + 0.12 * math.sin(tph * 0.8) * (1.0 - tw) + 0.35 * lunge + (0.55 if scream else 0.0) + 0.25 * tw * random.random()
         for side in (-1, 1):
             base_pt = (hx + cf * 4 * z, hy + sf * 4 * z)
             place_part(scr, P["jaw"] if side > 0 else P["jaw_f"], (4, 26), base_pt, f + side * open_, 0.23 * z)
@@ -4803,8 +4967,10 @@ class MonsterRenderer:
             for k in (-1, 0, 1):
                 pygame.draw.line(scr, (196, 186, 176), (hx + cf * 16 * z + px * k * 5 * z, hy + sf * 16 * z + py * k * 5 * z),
                                  (hx + cf * 24 * z + px * k * 7 * z, hy + sf * 24 * z + py * k * 7 * z), w(1))
-        # глаза: горящие зрачки в тёмных глазницах (зрачки пульсируют)
+        # глаза: горящие зрачки (пульсируют; у оглушённого мигают вразнобой)
         pr = 2 + (1 if int(t * 6) % 2 == 0 else 0) + (1 if chase else 0)
+        if tw > 0.5:
+            pr = random.choice((0.6, 1.0, 2.0, 3.0))
         for side in (-1, 1):
             ex_, ey_ = hx + cf * 4 * z + px * 4.5 * side * z, hy + sf * 4 * z + py * 4.5 * side * z
             pygame.draw.circle(scr, (250, 40, 28), (ex_, ey_), pr * z)
@@ -6664,7 +6830,7 @@ class CinematicRenderer:
             my = ease(188.0, 332.0, (u - 9.8) / 1.4)
         if u >= 12.0:
             k = clamp((u - 12.0) / 3.2, 0.0, 1.0)
-            mx, my, mang, mmov = ease(cx, -90.0, k), ease(332.0, 352.0, min(1.0, k * 4)) + 0.0, math.pi, True
+            mx, my, mang, mmov = ease(cx, -90.0, k), ease(332.0, 338.0, min(1.0, k * 4)), math.pi, True
         # --- солдаты: позы
         A, B_ = (410.0, 470.0), (614.0, 470.0)
         tgt = (cx, my)
@@ -6681,18 +6847,18 @@ class CinematicRenderer:
             sold.append((p_, ang))
         # --- Лена
         run = clamp((u - 7.0) / 1.6, 0.0, 1.0)
-        lx, ly, lang, lwalk = -90.0, 640.0, -0.6, 0.0
+        lx, ly, lang, lwalk, lamp = -90.0, 372.0, 0.0, 0.0, 0.0
         if u >= 7.0:
-            lx, ly, lang, lwalk = ease(-90.0, 470.0, run), ease(640.0, 420.0, run), -0.55 - 0.45 * run, t * 20
+            lx, ly, lang, lwalk, lamp = ease(-90.0, 480.0, run), ease(372.0, 384.0, run), 0.0, t * 20, 1.0       # бежит поперёк вестибюля
             if u >= 8.6:
-                lwalk = 0.0
-                lx, ly = 470.0, 420.0
+                lx, ly, lwalk, lamp = 480.0, 384.0, 0.0, 0.0
+                lang = aang(0.0, -math.pi / 2, (u - 8.6) / 0.4)                                                  # останавливается, лицом к лифту
             if u >= 9.8:
                 k = clamp((u - 9.8) / 1.2, 0.0, 1.0)
-                lx, ly, lang, lwalk = ease(470.0, 512.0, k), ease(420.0, 378.0, k), -math.pi / 2, (t * 9 if k < 1 else 0.0)
+                lx, ly, lang, lwalk, lamp = ease(480.0, 512.0, k), ease(384.0, 378.0, k), -math.pi / 2, t * 9, (1.0 if k < 1 else 0.0)
             if u >= 12.0:
                 k = clamp((u - 12.0) / 3.2, 0.0, 1.0)
-                lx, ly, lang, lwalk = ease(512.0, -90.0, k), ease(378.0, 392.0, min(1.0, k * 4)), math.pi, t * 9
+                lx, ly, lang, lwalk, lamp = ease(512.0, -90.0, k), ease(378.0, 428.0, min(1.0, k * 4)), math.pi, t * 9, 1.0
         # --- рисуем: Марк (под дверью), дверные створки, баррикада, солдаты, Лена
         if u >= 4.4 and u < 12.0 or u >= 12.0:
             pl = mk
@@ -6727,8 +6893,9 @@ class CinematicRenderer:
             draw_person(scr, self.tex.persons["soldier"], px_, py_, ang, head, 1.05 * pop)
         if u >= 7.0:
             shadow(lx, ly, 24)
-            sw_ = 1.0 + 0.04 * math.sin(lwalk)
-            draw_person(scr, self.tex.persons["lena"], lx, ly + 2 * math.sin(lwalk * 0.5), lang + 0.06 * math.sin(lwalk * 0.5), 0.0, 1.0 * sw_)
+            sw_ = 1.0 + 0.04 * math.sin(lwalk) * lamp + 0.012 * math.sin(t * 1.7)
+            draw_person(scr, self.tex.persons["lena"], lx, ly + 2 * math.sin(lwalk * 0.5) * lamp, lang + 0.06 * math.sin(lwalk * 0.5) * lamp, 0.0, 1.0 * sw_,
+                        walk=lwalk, amp=lamp, boot=self.tex.hparts["boot"])
         # красные лазерные указки от автоматов: видны, пока оружие нацелено
         if 3.5 <= u < 8.9:
             for (px_, py_), ang in sold:
@@ -7078,6 +7245,7 @@ class Game:
         self.cin_view = CinematicRenderer(cin=self.cin, clock=self.clock, screen=self.screen, tex=self.tex, text=self.text,
                                           sprites=self.sprites, s=self.s)
         self.evac = EvacSystem(audio=self.audio, note=self.note, s=self.s)
+        self.anim = AnimationSystem(s=self.s)
         self.fx = PostFX(atmo=self.atmo, cfg=self.cfg, clock=self.clock, s=self.s, screen=self.screen, tex=self.tex)
         self.hud = Hud(cfg=self.cfg, clock=self.clock, minimap=self.minimap, note=self.note, s=self.s, screen=self.screen, text=self.text)
         self.screens = ScreenRenderer(ach=self.ach, audio=self.audio, cfg=self.cfg, clock=self.clock, lighting=self.lighting, s=self.s, scores=self.scores, screen=self.screen, tex=self.tex, text=self.text)
@@ -7437,6 +7605,7 @@ class Game:
         self.atmo.update(dt)
         self.pickups.update(dt)
         self.evac.update(dt)
+        self.anim.update(dt)
         self.stealth.update(dt)
         self.minimap.update()
         self.note.tick(dt)
