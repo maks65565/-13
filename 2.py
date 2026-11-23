@@ -23,6 +23,7 @@
     ФИНАЛЬНЫЙ БОС: ПКМ — выстрел в такт (кольцо = цель), Q — перезарядка, ПРОБЕЛ — парирование атаки
     F8 / F9 / F10   — ЧИТЫ: F8 — следующий этаж, F9 — все ключи + заряд + телепорт к двери, F10 — сразу финал
     TAB             — архив прочитанных записок
+    МЕНЮ            — кнопки (мышь или ↑↓ + ENTER): Начать игру, Управление, Настройки, Достижения, Рекорды, Выход
     АНИМАЦИЯ        — шаг героя и монстра идёт по пройденному пути (ноги не скользят), плавный старт/остановка, дыхание, испуг;
                       у монстра позы: крадётся / принюхивается / бросок / оглушён; звук шагов — в такт ногам
     ВНИЗ НА -10     — на этаже -3 лифт срывается и падает в шахту: найди динамит и взорви завал (секретная концовка)
@@ -4049,7 +4050,8 @@ class ScreenRenderer:
         self.drips = []
 
 
-    def draw_menu(self):
+    def draw_menu_backdrop(self, subtitle):
+        """Фон меню: тёмная лаборатория с лучом фонаря, дрожащий заголовок и подзаголовок страницы."""
         scr = self.screen
         scr.blit(self.menu_bg, (0, 0))
         ang = -math.pi / 2 + math.sin(self.clock.t * 0.55) * 0.7
@@ -4058,30 +4060,7 @@ class ScreenRenderer:
         lvl = 12 if random.random() > 0.03 else 4
         self.lighting.render_darkness(hx, hy, ang, lvl, None, 244)
         self.glitch_title("БУНКЕР-13", self.text.f_title, 190, (200, 20, 20))
-        self.text.draw_text(self.text.f_mid, "ПОБЕГ ИЗ ЗАБРОШЕННОЙ ЛАБОРАТОРИИ", (150, 150, 140), (SW // 2, 262))
-        lines = ["Найди 3 ключа и добеги до выхода.",
-                 "Не попадись тому, кто бродит во тьме.",
-                 "",
-                 "WASD / СТРЕЛКИ — идти      SHIFT — бежать (ШУМНО)",
-                 "МЫШЬ — луч фонаря         F / ЛКМ — вкл/выкл свет",
-                 "M — карта                 P / ESC — пауза",
-                 "E — шкафчик (прятаться)   ←/→ — сложность",
-                 "Q / ПКМ — бутылка   TAB — архив записок   F2 — качество"]
-        for i, s in enumerate(lines):
-            self.text.draw_text(self.text.f_small, s, (170, 170, 160), (SW // 2, 340 + i * 26))
-        if int(self.clock.t * 1.6) % 2 == 0:
-            self.text.draw_text(self.text.f_mid, "НАЖМИТЕ  ENTER", (220, 220, 210), (SW // 2, 560))
-        self.text.draw_text(self.text.f_mid, "СЛОЖНОСТЬ:  <  %s  >" % DIFFS[self.cfg.diff]["name"], (200, 170, 120), (SW // 2, 610))
-        b = self.scores.best[self.cfg.diff]
-        if b is not None:
-            self.text.draw_text(self.text.f_small, "РЕКОРД: %02d:%02d" % (int(b) // 60, int(b) % 60), (150, 150, 120), (SW // 2, 645))
-        self.text.draw_text(self.text.f_small, "ESC — выход", (110, 110, 100), (SW // 2, 676))
-        self.text.draw_text(self.text.f_small, "F2 КАЧЕСТВО: %s    F3 ЩАДЯЩИЙ: %s    N ЗВУК: %s    F11 ЭКРАН" % (
-            "ВЫСОКОЕ" if self.cfg.quality else "НИЗКОЕ", "ВКЛ" if self.cfg.gentle else "ВЫКЛ",
-            "ВЫКЛ" if self.audio.muted else "ВКЛ"), (84, 84, 78), (SW // 2, 704))
-        scr.blit(self.tex.overlay, (0, 0))
-        scr.blit(random.choice(self.tex.grain), (0, 0))
-
+        self.text.draw_text(self.text.f_mid, subtitle, (150, 150, 140), (SW // 2, 262))
     def glitch_title(self, text, font, cy, color):
         t = self.clock.t
         jx = random.randint(-4, 4) if random.random() < 0.06 else 0
@@ -7060,6 +7039,202 @@ class EvacSystem:
             s.emit("evac_arrive")
 
 
+# ------------------------------------------------------------------ МЕНЮ
+class MenuModel:
+    """Главное меню (ответственность: страницы, кнопки, выбор клавиатурой и мышью; активация возвращает команду для Game)."""
+
+    MAIN = (("start", "НАЧАТЬ ИГРУ"), ("controls", "УПРАВЛЕНИЕ"), ("settings", "НАСТРОЙКИ"),
+            ("achievements", "ДОСТИЖЕНИЯ"), ("records", "РЕКОРДЫ"), ("quit", "ВЫХОД"))
+    TITLES = {"main": "ПОБЕГ ИЗ ЗАБРОШЕННОЙ ЛАБОРАТОРИИ", "controls": "УПРАВЛЕНИЕ", "settings": "НАСТРОЙКИ",
+              "achievements": "ДОСТИЖЕНИЯ", "records": "РЕКОРДЫ"}
+    HINTS = {"diff": "Чем выше сложность, тем быстрее и злее монстр и меньше батареек.",
+             "quality": "Низкое качество убирает тени от стен, туман и зерно — для слабых компьютеров.",
+             "gentle": "Меньше вспышек, тряски и сбоев картинки (для чувствительных к мельканию).",
+             "map": "Показывать миникарту в углу экрана (в игре — клавиша M).",
+             "sound": "Включить или выключить весь звук и музыку (в игре — клавиша N).",
+             "fullscreen": "Переключить окно и полный экран (в игре — клавиша F11).",
+             "back": "Вернуться в главное меню."}
+
+    def __init__(self, cfg, audio, ach, scores):
+        self.cfg = cfg
+        self.audio = audio
+        self.ach = ach
+        self.scores = scores
+        self.reset()
+
+    def reset(self):
+        self.page = "main"
+        self.sel = 0
+        self.main_sel = 0
+
+    def buttons(self):
+        """[(id, подпись)] кнопок текущей страницы; подписи настроек показывают текущие значения."""
+        if self.page == "main":
+            return list(self.MAIN)
+        if self.page == "settings":
+            c = self.cfg
+            return [("diff", "СЛОЖНОСТЬ:  %s" % DIFFS[c.diff]["name"]),
+                    ("quality", "КАЧЕСТВО:  %s" % ("ВЫСОКОЕ" if c.quality else "НИЗКОЕ")),
+                    ("gentle", "ЩАДЯЩИЙ РЕЖИМ:  %s" % ("ВКЛ" if c.gentle else "ВЫКЛ")),
+                    ("map", "МИНИКАРТА:  %s" % ("ВКЛ" if c.show_map else "ВЫКЛ")),
+                    ("sound", "ЗВУК:  %s" % ("ВЫКЛ" if self.audio.muted else "ВКЛ")),
+                    ("fullscreen", "ПОЛНЫЙ ЭКРАН"), ("back", "НАЗАД")]
+        return [("back", "НАЗАД")]
+
+    def rects(self):
+        """Прямоугольники кнопок текущей страницы (общие для рисования и для попадания мышью)."""
+        n = len(self.buttons())
+        w, h, gap, y0 = {"main": (380, 46, 10, 322), "settings": (540, 44, 10, 282)}.get(self.page, (260, 46, 0, 646))
+        return [pygame.Rect(SW // 2 - w // 2, y0 + i * (h + gap), w, h) for i in range(n)]
+
+    def hover(self, pos):
+        """Наведение мыши: выбирает кнопку под курсором. True, если курсор над кнопкой."""
+        for i, r in enumerate(self.rects()):
+            if r.x <= pos[0] < r.x + r.w and r.y <= pos[1] < r.y + r.h:
+                if i != self.sel:
+                    self.sel = i
+                    self.audio.play("click", vol=0.25)
+                return True
+        return False
+
+    def click(self, pos):
+        return self.activate() if self.hover(pos) else None
+
+    def move(self, delta):
+        self.sel = (self.sel + delta) % len(self.buttons())
+        self.audio.play("click", vol=0.35)
+
+    def adjust(self, delta):
+        """Стрелки влево/вправо на странице настроек меняют выбранный параметр."""
+        if self.page != "settings":
+            return None
+        bid = self.buttons()[self.sel][0]
+        return {"diff": ("diff", delta), "quality": ("quality",), "gentle": ("gentle",), "map": ("toggle_map",), "sound": ("mute",)}.get(bid)
+
+    def activate(self):
+        bid = self.buttons()[self.sel][0]
+        self.audio.play("click", vol=0.6)
+        if self.page == "main":
+            if bid == "start":
+                return ("start_prologue",)
+            if bid == "quit":
+                return ("quit",)
+            self.main_sel, self.page, self.sel = self.sel, bid, 0
+            return None
+        if bid == "back":
+            self.back()
+            return None
+        return {"diff": ("diff", 1), "quality": ("quality",), "gentle": ("gentle",), "map": ("toggle_map",),
+                "sound": ("mute",), "fullscreen": ("fullscreen",)}.get(bid)
+
+    def back(self):
+        """С подстраницы — в главное меню; из главного — выход из игры."""
+        if self.page == "main":
+            return ("quit",)
+        self.page, self.sel = "main", self.main_sel
+        return None
+
+
+class MenuRenderer:
+    """Рисование меню (ответственность: заставка, кнопки, страницы «Управление», «Настройки», «Достижения», «Рекорды»)."""
+
+    CONTROLS_A = (("WASD / СТРЕЛКИ", "идти"), ("SHIFT", "бежать (шумно!)"), ("МЫШЬ", "направить фонарь"),
+                  ("F / ЛКМ", "фонарь вкл / выкл"), ("E", "шкафчик: спрятаться"), ("Q / ПКМ", "бросить бутылку"),
+                  ("M", "миникарта"), ("TAB", "архив записок"), ("P / ESC", "пауза"))
+    CONTROLS_B = (("ПРОБЕЛ x10", "вырваться из хватки"), ("ПКМ", "выстрел в бою (босс)"), ("Q", "перезарядка (босс)"),
+                  ("ПРОБЕЛ", "парировать удар (босс)"), ("1 / 2 / 3", "выбор в финале"), ("ENTER", "пропуск сцен, записки"),
+                  ("F2 / F3", "графика / щадящий"), ("N / F11", "звук / экран"), ("F8 F9 F10", "читы для проверки"))
+
+    def __init__(self, menu, screens, clock, screen, tex, text, ach, scores):
+        self.menu = menu
+        self.screens = screens
+        self.clock = clock
+        self.screen = screen
+        self.tex = tex
+        self.text = text
+        self.ach = ach
+        self.scores = scores
+
+    def draw_button(self, r, label, selected):
+        scr, t = self.screen, self.clock.t
+        pygame.draw.rect(scr, (6, 6, 8), r.move(3, 4), border_radius=9)                        # тень
+        pygame.draw.rect(scr, (52, 12, 14) if selected else (20, 22, 24), r, border_radius=9)
+        pygame.draw.rect(scr, (214, 42, 38) if selected else (74, 78, 82), r, 2 + (int(1.5 + 1.5 * math.sin(t * 6)) if selected else 0), border_radius=9)
+        cx, cy = r.center
+        if selected:                                                                           # красные стрелки по бокам
+            for sd in (-1, 1):
+                x0 = r.x + 22 if sd < 0 else r.x + r.w - 22
+                pygame.draw.polygon(scr, (214, 42, 38), [(x0 - 8 * sd, cy - 8), (x0 - 8 * sd, cy + 8), (x0 + 6 * sd, cy)])
+        self.text.draw_text(self.text.f_mid, label, (255, 238, 224) if selected else (196, 196, 186), (cx, cy))
+
+    def draw_controls(self):
+        tx = self.text
+        tx.draw_text(tx.f_small, "Найди ключи и добеги до лифта. Не попадись тому, кто бродит во тьме.", (170, 170, 160), (SW // 2, 306))
+        for col, rows in ((70, self.CONTROLS_A), (540, self.CONTROLS_B)):
+            for i, (key, desc) in enumerate(rows):
+                y = 342 + i * 33
+                chip = pygame.Rect(col, y - 13, 160, 27)
+                pygame.draw.rect(self.screen, (16, 18, 20), chip, border_radius=6)
+                pygame.draw.rect(self.screen, (110, 114, 118), chip, 1, border_radius=6)
+                tx.draw_text(tx.f_small, key, (236, 226, 190), chip.center, True, False)
+                tx.draw_text(tx.f_small, desc, (190, 190, 180), (col + 176, y), False)
+
+    def draw_achievements(self):
+        tx, items = self.text, list(AchievementTracker.LIST.items())
+        for i, (code, (title, desc)) in enumerate(items):
+            col, row = i % 2, i // 2
+            r = pygame.Rect(70 + col * 470, 296 + row * 62, 440, 56)
+            got = code in self.ach.unlocked
+            pygame.draw.rect(self.screen, (30, 26, 10) if got else (16, 18, 20), r, border_radius=8)
+            pygame.draw.rect(self.screen, (214, 180, 60) if got else (60, 64, 68), r, 2, border_radius=8)
+            ix, iy = r.x + 30, r.y + 28                                                         # значок: звезда или замок
+            if got:
+                pts = [(ix + math.cos(a * math.pi / 5 - math.pi / 2) * (15 if a % 2 == 0 else 7), iy + math.sin(a * math.pi / 5 - math.pi / 2) * (15 if a % 2 == 0 else 7)) for a in range(10)]
+                pygame.draw.polygon(self.screen, (240, 200, 70), pts)
+                pygame.draw.polygon(self.screen, (120, 90, 20), pts, 2)
+            else:
+                pygame.draw.rect(self.screen, (70, 74, 78), (ix - 10, iy - 2, 20, 15), border_radius=3)
+                pygame.draw.arc(self.screen, (70, 74, 78), (ix - 7, iy - 14, 14, 18), 0.0, math.pi, 3)
+            tx.draw_text(tx.f_small, title, (250, 224, 140) if got else (130, 132, 130), (r.x + 62, r.y + 17), False)
+            for k, row_txt in enumerate(tx.wrap(tx.f_small, desc, 350)[:2]):
+                tx.draw_text(tx.f_small, row_txt, (200, 196, 176) if got else (100, 102, 100), (r.x + 62, r.y + 35 + k * 15), False)
+
+    def draw_records(self):
+        tx = self.text
+        tx.draw_text(tx.f_mid, "ЛУЧШЕЕ ВРЕМЯ ПРОХОЖДЕНИЯ", (170, 170, 160), (SW // 2, 330))
+        for i, d in enumerate(DIFFS):
+            b = self.scores.best[i]
+            y = 400 + i * 62
+            tx.draw_text(tx.f_big, d["name"], (214, 180, 120), (SW // 2 - 40, y), True)
+            tx.draw_text(tx.f_big, "--:--" if b is None else "%02d:%02d" % (int(b) // 60, int(b) % 60), (236, 236, 226) if b is not None else (100, 100, 96), (SW // 2 + 160, y))
+        tx.draw_text(tx.f_small, "Рекорды хранятся, пока открыта игра. Прохождения с читами не засчитываются.", (120, 120, 110), (SW // 2, 604))
+
+    def draw(self):
+        m, tx, scr = self.menu, self.text, self.screen
+        extra = ""
+        if m.page == "achievements":
+            extra = "   %d / %d" % (len(self.ach.unlocked), len(AchievementTracker.LIST))
+        self.screens.draw_menu_backdrop(m.TITLES[m.page] + extra)
+        if m.page == "controls":
+            self.draw_controls()
+        elif m.page == "achievements":
+            self.draw_achievements()
+        elif m.page == "records":
+            self.draw_records()
+        btns = m.buttons()
+        for i, (r, (bid, label)) in enumerate(zip(m.rects(), btns)):
+            self.draw_button(r, label, i == m.sel)
+        if m.page == "settings":
+            tx.draw_text(tx.f_small, m.HINTS[btns[m.sel][0]], (170, 170, 150), (SW // 2, 684))
+        elif m.page == "main":
+            b = self.scores.best[m.cfg.diff]
+            if b is not None:
+                tx.draw_text(tx.f_small, "Лучшее время (%s): %02d:%02d" % (DIFFS[m.cfg.diff]["name"], int(b) // 60, int(b) % 60), (150, 150, 120), (SW // 2, 688))
+        tx.draw_text(tx.f_small, "↑ ↓ — выбор     ENTER — подтвердить     ESC — назад     мышь тоже работает", (96, 96, 90), (SW // 2, 708))
+        scr.blit(self.tex.overlay, (0, 0))
+        scr.blit(random.choice(self.tex.grain), (0, 0))
+
+
 # ------------------------------------------------------------------ ВВОД
 class InputRouter:
     """Переводит события и опрос клавиатуры pygame в команды. Никакой игровой логики."""
@@ -7089,8 +7264,10 @@ class InputRouter:
             return [("quit",)]
         if e.type == pygame.MOUSEMOTION:
             self.mouse_t = self.clock.t
-            return []
+            return [("menu_hover", getattr(e, "pos", pygame.mouse.get_pos()))] if state == "menu" else []
         if e.type == pygame.MOUSEBUTTONDOWN:
+            if state == "menu" and e.button == 1:
+                return [("menu_click", getattr(e, "pos", pygame.mouse.get_pos()))]
             if state == "play":
                 if e.button == 1:
                     return [("toggle_light",)]
@@ -7113,13 +7290,17 @@ class InputRouter:
             return [("fullscreen",)]
         if state == "menu":
             if enter:
-                return [("start_prologue",)]
+                return [("menu_activate",)]
             if k == pygame.K_ESCAPE:
-                return [("quit",)]
+                return [("menu_back",)]
+            if k in (pygame.K_UP, pygame.K_w):
+                return [("menu_nav", -1)]
+            if k in (pygame.K_DOWN, pygame.K_s):
+                return [("menu_nav", 1)]
             if k in (pygame.K_LEFT, pygame.K_a):
-                return [("diff", -1)]
+                return [("menu_adjust", -1)]
             if k in (pygame.K_RIGHT, pygame.K_d):
-                return [("diff", 1)]
+                return [("menu_adjust", 1)]
             if k in (pygame.K_1, pygame.K_2, pygame.K_3):
                 return [("diff_set", k - pygame.K_1)]
         elif state == "archive":
@@ -7255,6 +7436,9 @@ class Game:
         self.music = MusicDirector(atmo=self.atmo, audio=self.audio, boss=self.boss, s=self.s)
         self.radio = RadioSystem(audio=self.audio, s=self.s)
         self.achview = AchievementRenderer(ach=self.ach, screen=self.screen, text=self.text)
+        self.menu = MenuModel(cfg=self.cfg, audio=self.audio, ach=self.ach, scores=self.scores)
+        self.menuview = MenuRenderer(menu=self.menu, screens=self.screens, clock=self.clock, screen=self.screen, tex=self.tex,
+                                     text=self.text, ach=self.ach, scores=self.scores)
         self.radioview = RadioRenderer(clock=self.clock, radio=self.radio, screen=self.screen, text=self.text)
         self.playview = PlayView(atmo=self.atmo, camera=self.camera, cfg=self.cfg, clock=self.clock, fx=self.fx, hud=self.hud, lighting=self.lighting, monster_view=self.monster_view, painter=self.painter, s=self.s, screen=self.screen, sprites=self.sprites, tex=self.tex, torch=self.torch)
         self.bossview = BossRenderer(boss=self.boss, clock=self.clock, fx=self.fx, lighting=self.lighting, monster_view=self.monster_view, s=self.s, screen=self.screen, sprites=self.sprites, tex=self.tex, text=self.text)
@@ -7533,6 +7717,15 @@ class Game:
             self.boss.resolve(cmd[1])
         elif name == "cheat_floor":
             self.cheats.floor()
+        elif name == "menu_nav":
+            self.menu.move(cmd[1])
+        elif name == "menu_hover":
+            self.menu.hover(cmd[1])
+        elif name in ("menu_activate", "menu_click", "menu_adjust", "menu_back"):
+            nxt = {"menu_activate": lambda: self.menu.activate(), "menu_click": lambda: self.menu.click(cmd[1]),
+                   "menu_adjust": lambda: self.menu.adjust(cmd[1]), "menu_back": lambda: self.menu.back()}[name]()
+            if nxt:                                  # кнопка меню вернула обычную команду (начать игру, выйти, сменить настройку...)
+                self.execute(nxt)
         elif name == "diff":
             self.cfg.cycle_diff(cmd[1])
             self.audio.play("click", vol=0.5)
@@ -7548,6 +7741,7 @@ class Game:
             pygame.mouse.set_visible(False)
         elif name == "to_menu":
             self.audio.restore()
+            self.menu.reset()
             self.state = "menu"
             pygame.mouse.set_visible(True)
         elif name == "toggle_light":
@@ -7614,7 +7808,7 @@ class Game:
     def step(self, dt):
         st = self.state
         if st == "menu":
-            self.screens.draw_menu()
+            self.menuview.draw()
         elif st == "play":
             self.update_play(dt)
             if self.state == "play":
