@@ -1000,13 +1000,14 @@ def make_monster_hi():
 PERSONS = {
     "soldier": {"coat": (84, 98, 66)}, "lena": {"coat": (196, 120, 64)}, "scientist": {"coat": (222, 224, 230)},
     "kessler": {"coat": (34, 34, 42)}, "guard": {"coat": (66, 70, 80)},
+    "thomas": {"coat": (150, 158, 168)}, "weira": {"coat": (232, 234, 240)},
 }
 
 def make_person_hi(kind):
     """Человек сверху (смотрит вправо), 96x96: плечи/куртка из ткани, голова с волосами/шлемом/фуражкой, детали по роли
     (разгрузка и автомат, шарф и хвост, халат с бейджем, костюм, форма). Свет сверху-слева, контур."""
     S = 96
-    rnd = random.Random({"soldier": 1, "lena": 2, "scientist": 3, "kessler": 4, "guard": 5}[kind])
+    rnd = random.Random({"soldier": 1, "lena": 2, "scientist": 3, "kessler": 4, "guard": 5, "thomas": 6, "weira": 7}[kind])
     base = pygame.Surface((S, S), pygame.SRCALPHA)
     hb = pygame.Surface((S, S), pygame.SRCALPHA)               # голова рисуется отдельно: может поворачиваться вслед за игроком
     coat = PERSONS[kind]["coat"]
@@ -1036,11 +1037,11 @@ def make_person_hi(kind):
         for sy_, hy in ((18, 42), (78, 54)):
             pygame.draw.line(base, shade(coat, -60), (44, sy_), (66 if hy == 42 else 76, hy), 12)
             pygame.draw.line(base, arm_col, (44, sy_), (66 if hy == 42 else 76, hy), 9)
-    elif kind in ("lena", "scientist", "guard"):
+    elif kind in ("lena", "scientist", "guard", "thomas", "weira"):
         for sd in (-1, 1):
             pygame.draw.line(base, shade(coat, -60), (44, 48 + sd * 26), (66, 48 + sd * 30), 12)
             pygame.draw.line(base, arm_col, (44, 48 + sd * 26), (66, 48 + sd * 30), 9)
-            pygame.draw.circle(base, (36, 30, 28) if kind != "scientist" else (200, 150, 128), (67, 48 + sd * 30), 5)
+            pygame.draw.circle(base, (200, 150, 128) if kind in ("scientist", "thomas", "weira") else (36, 30, 28), (67, 48 + sd * 30), 5)
     # --- торс
     body((22, 12, 50, 72))
     # --- детали торса
@@ -1051,7 +1052,15 @@ def make_person_hi(kind):
             pygame.draw.rect(base, (36, 42, 32), (50, y, 10, 8), border_radius=2)
             pygame.draw.rect(base, (74, 84, 62), (51, y + 1, 8, 4), border_radius=1)
         pygame.draw.rect(base, (28, 32, 26), (30, 44, 8, 8))
-    elif kind == "scientist":
+    elif kind == "thomas":                                   # серая больничная роба с номером 13 на спине
+        pygame.draw.line(base, (112, 120, 130), (28, 48), (60, 48), 2)
+        for (x1, y1, x2, y2) in ((34, 24, 46, 28), (34, 74, 46, 70), (46, 36, 54, 40), (46, 60, 54, 56)):
+            pygame.draw.line(base, (126, 134, 144), (x1, y1), (x2, y2), 2)
+        pygame.draw.rect(base, (230, 230, 232), (27, 37, 19, 22))
+        pygame.draw.rect(base, (60, 60, 66), (27, 37, 19, 22), 1)
+        pygame.draw.line(base, (30, 30, 36), (33, 41), (33, 55), 2)                              # «1»
+        pygame.draw.lines(base, (30, 30, 36), False, [(37, 41), (43, 41), (43, 48), (38, 48), (43, 48), (43, 55), (37, 55)], 2)   # «3»
+    elif kind in ("scientist", "weira"):
         pygame.draw.line(base, (170, 174, 184), (28, 48), (60, 48), 2)                         # шов спины
         for (x1, y1, x2, y2) in ((30, 24, 44, 28), (30, 74, 44, 70), (36, 36, 48, 40), (36, 62, 48, 58)):
             pygame.draw.line(base, (186, 190, 200), (x1, y1), (x2, y2), 2)                       # складки халата
@@ -1078,7 +1087,7 @@ def make_person_hi(kind):
         for a in range(0, 360, 40):
             pygame.draw.line(base, (24, 90, 96), (56 + math.cos(math.radians(a)) * 9, 48 + math.sin(math.radians(a)) * 9),
                              (56 + math.cos(math.radians(a)) * 17, 48 + math.sin(math.radians(a)) * 17), 1)
-    elif kind == "scientist":
+    elif kind in ("scientist", "weira"):
         for sd in (-1, 1):
             pygame.draw.polygon(base, (246, 248, 252), [(58, 48 + sd * 3), (66, 48 + sd * 11), (58, 48 + sd * 14)])
             pygame.draw.polygon(base, (150, 154, 166), [(58, 48 + sd * 3), (66, 48 + sd * 11), (58, 48 + sd * 14)], 1)
@@ -1105,7 +1114,7 @@ def make_person_hi(kind):
         pygame.draw.circle(hb, (22, 22, 28), (hx, hy), 14, 2)
     else:
         pygame.draw.ellipse(hb, sk_d, (hx - 6, hy - 18, 9, 10)); pygame.draw.ellipse(hb, sk_d, (hx - 6, hy + 8, 9, 10))   # уши
-        hair = {"lena": (104, 64, 38), "scientist": (150, 148, 150), "kessler": (156, 156, 164)}[kind]
+        hair = {"lena": (104, 64, 38), "scientist": (150, 148, 150), "kessler": (156, 156, 164), "thomas": (54, 42, 36), "weira": (116, 62, 44)}[kind]
         pygame.draw.circle(hb, shade(hair, -50), (hx, hy), 14)
         ht = textured((S, S), lambda m: pygame.draw.circle(m, MASK_W, (hx, hy), 13), make_fabric(hair, S))
         hb.blit(ht, (0, 0))
@@ -1122,6 +1131,14 @@ def make_person_hi(kind):
             for k in range(6):
                 a = k * 1.05
                 pygame.draw.line(hb, (186, 184, 188), (hx, hy), (hx + math.cos(a) * 11, hy + math.sin(a) * 11), 1)
+        elif kind == "weira":                                                                  # собранный пучок и заколка
+            pygame.draw.circle(hb, shade(hair, -50), (hx - 17, hy), 8)
+            pygame.draw.circle(hb, hair, (hx - 17, hy), 6)
+            pygame.draw.line(hb, shade(hair, 40), (hx - 20, hy - 2), (hx - 14, hy + 2), 1)
+            pygame.draw.circle(hb, (200, 60, 60), (hx - 11, hy - 6), 2)
+        elif kind == "thomas":                                                                 # короткая стрижка, чёлка набок
+            for k in range(-3, 4):
+                pygame.draw.line(hb, shade(hair, 26), (hx - 10, hy + k * 3), (hx + 8, hy + k * 3 + 2), 1)
     # --- автомат (поверх рук)
     if kind == "soldier":
         pygame.draw.rect(base, (14, 14, 16), (34, 47, 14, 10), border_radius=2)                 # приклад
@@ -1928,6 +1945,16 @@ class Audio:
 
 
 # ------------------------------------------------------------------ СУЩНОСТИ
+class StageActor:
+    """Сценический актёр: поля, нужные MonsterRenderer.paint, когда монстра ведёт кат-сцена, а не игра."""
+
+    def __init__(self, state="chase", facing=0.0, anim=0.0):
+        self.state, self.facing, self.anim = state, facing, anim
+        self.x = self.y = 0.0
+        self.stun = 0
+        self.ani = MonsterAnim.synth(state, anim)
+
+
 class PlayerAnim:
     """Анимационное состояние героя (данные): фаза шага, плавность движения, наклон, дыхание, испуг."""
 
@@ -2230,13 +2257,14 @@ class StoryBook:
     твой друг), Лена (его сестра, на связи по рации), доктор Вейра, инженер Лиза Рау, охранник Громов, директор Кесслер.
     """
 
-    PROLOGUE = [        # (длительность, слова рассказчика) — шесть сцен вступительной кат-сцены
+    PROLOGUE = [        # (длительность, слова рассказчика) — семь сцен вступительной кат-сцены
         (5.0, ["1987 год. Подземный комплекс «БУНКЕР-13».", "Проект «ГЛУБИНА» обещал людям вторую жизнь."]),
-        (5.0, ["Директор Кесслер приказал начать испытания на людях.", "«Вторая волна. Без отступлений»."]),
-        (5.0, ["Марку, технику комплекса, сказали: «Просто витамины»."]),
-        (6.0, ["Но образец №13 не выдержал. Стекло треснуло.", "Он вышел из-под контроля."]),
-        (4.5, ["Кесслер запечатал этажи и сбежал на поверхность.", "Лифты — единственный путь наверх."]),
-        (5.0, ["Ты очнулся один в темноте. В кармане — фонарик и рация.", "В эфире кто-то шепчет твоё имя."]),
+        (6.0, ["Первым добровольцем стал Томас, брат Лены.", "Ему обещали деньги на её лечение."]),
+        (6.0, ["Директор Кесслер приказал начать испытания на людях.", "«Вторая волна. Без отступлений»."]),
+        (5.5, ["Марку, технику комплекса, сказали: «Просто витамины»."]),
+        (6.5, ["Но образец №13 не выдержал. Стекло треснуло.", "Он вышел из-под контроля."]),
+        (5.0, ["Кесслер запечатал этажи и сбежал на поверхность.", "Лифты — единственный путь наверх."]),
+        (5.5, ["Ты очнулся один в темноте. В кармане — фонарик и рация.", "В эфире кто-то шепчет твоё имя."]),
     ]
     FLOOR_LINES = [
         ("Лабораторный корпус: стерильно, тихо — и всё в крови.",
@@ -6205,10 +6233,18 @@ class StruggleRenderer:
 class PrologueSystem:
     """Вступительная кат-сцена (ответственность: таймлайн шести сцен, звуки по времени, сигнал о завершении)."""
 
-    CUES = [(0, 0.2, "hum", 2, 0.5), (1, 0.4, "sub", 0, 0.6), (1, 2.5, "click", 0, 0.7),
-            (2, 1.2, "clunk", 0, 0.9), (2, 1.5, "heart", 0, 0.7), (2, 3.0, "heart", 0, 0.8),
-            (3, 0.9, "rumble", 0, 1.0), (3, 2.3, "crash", 0, 1.0), (3, 2.4, "alarm", 1, 0.45), (3, 4.2, "roar", 0, 0.55),
-            (4, 0.5, "door", 0, 0.9), (4, 2.3, "door", 0, 0.9), (5, 1.0, "radio", 0, 0.7), (5, 2.2, "whisper", 0, 0.5)]
+    CUES = ([(0, 0.1, "rumble", 0, 0.35), (0, 1.9, "door", 0, 0.6), (0, 3.7, "clunk", 0, 0.9)]
+            + [(0, 2.4 + 0.45 * i, "step", 0, 0.3) for i in range(5)]
+            + [(1, 0.2, "hum", 2, 0.5), (1, 3.5, "step_metal", 0, 0.35), (1, 3.85, "step_metal2", 0, 0.35), (1, 4.2, "clunk", 0, 0.9), (1, 4.5, "static", 0, 0.45)]
+            + [(1, 0.3 + 0.45 * i, "step_metal" if i % 2 else "step_metal2", 0, 0.35) for i in range(6)]
+            + [(2, 0.3, "sub", 0, 0.5), (2, 3.2, "clunk", 0, 1.0), (2, 5.3, "door", 0, 0.6)]
+            + [(2, 4.2 + 0.4 * i, "step", 0, 0.3) for i in range(4)]
+            + [(3, 1.2, "click", 0, 0.8), (3, 1.5, "heart", 0, 0.7), (3, 3.3, "heart", 0, 0.9), (3, 4.0, "heart", 0, 1.0)]
+            + [(4, 0.4, "rumble", 0, 0.8), (4, 1.3, "transform", 0, 0.8), (4, 2.6, "crash", 0, 1.0), (4, 2.7, "alarm", 1, 0.45),
+               (4, 2.9, "shriek", 0, 0.4), (4, 3.6, "roar", 0, 0.6)]
+            + [(5, 0.3 + 0.28 * i, "step_metal" if i % 2 else "step_metal2", 0, 0.4) for i in range(10)]
+            + [(5, 3.3, "ding", 0, 0.7), (5, 3.7, "door", 0, 1.0), (5, 4.6, "bang", 0, 1.0)]
+            + [(6, 0.8, "radio", 0, 0.7), (6, 1.9, "whisper", 0, 0.6), (6, 4.2, "click", 0, 0.8)])
 
     def __init__(self, audio, s):
         self.audio = audio
@@ -6256,31 +6292,67 @@ class PrologueSystem:
 
 
 class PrologueRenderer:
-    """Рисование вступления (ответственность: шесть анимированных сцен сверху, титры рассказчика, полосы, затемнения)."""
+    """
+    Рисование вступления (ответственность: семь анимированных сцен сверху с живыми персонажами — ходьба, взгляды, превращение;
+    плавная камера, шорох дождя, титры рассказчика, полосы, затемнения).
+    Сцены: 0 — ночь снаружи, 1 — Томас идёт в резервуар, 2 — приказ Кесслера, 3 — укол Марку, 4 — прорыв,
+    5 — печать этажей и побег Кесслера, 6 — Марк просыпается.
+    """
 
-    def __init__(self, clock, prologue, screen, tex, text):
+    CAMS = [(1.00, 1.14, 0, -40, 0, -20), (1.00, 1.10, 0, -50, 0, 0), (1.00, 1.12, 0, 0, 12, -20), (1.02, 1.14, 0, 0, 0, 0),
+            (1.00, 1.04, 0, 0, 0, 0), (1.15, 1.15, 70, -70, 0, 0), (1.00, 1.00, 0, 0, 0, 0)]       # зум и сдвиг: начало -> конец
+
+    def __init__(self, clock, prologue, screen, tex, text, sprites, s, monster_view):
         self.clock = clock
         self.prologue = prologue
         self.screen = screen
         self.tex = tex
         self.text = text
+        self.sprites = sprites
+        self.s = s
+        self.monster_view = monster_view
         self.room = None
-        self.tmp = pygame.Surface((320, 320), pygame.SRCALPHA)
+        self.mon_green = None
+        self.stage = pygame.Surface((SW, SH))                      # сцена рисуется сюда, камера переносит её на экран
+        self.tmp = pygame.Surface((260, 260), pygame.SRCALPHA)
         self.veil = pygame.Surface((SW, SH))
         self.plate = pygame.Surface((SW, 150))
         self.plate.fill((0, 0, 0))
         self.plate.set_alpha(150)
+        self.lid = pygame.Surface((340, 340), pygame.SRCALPHA)       # стеклянная крышка резервуара
+        pygame.draw.circle(self.lid, (170, 220, 216, 96), (170, 170), 160)
+        self.liq = pygame.Surface((340, 340), pygame.SRCALPHA)       # зелёный раствор
+        pygame.draw.circle(self.liq, (28, 120, 90, 130), (170, 170), 150)
+        self.beam_car = pygame.Surface((360, 200), pygame.SRCALPHA)  # свет фар
+        pygame.draw.polygon(self.beam_car, (255, 240, 190, 64), [(0, 82), (360, 10), (360, 190), (0, 118)])
+        self.shake = (0.0, 0.0)
+        self.pulse = 0.0
 
     def prepare(self):
-        """Лабораторный пол из тех же процедурных тайлов (строится один раз)."""
-        if self.room is not None:
-            return
-        self.room = make_tiled_room(self.tex)
+        """Пол из тех же тайлов и зелёная копия монстра (для превращения в резервуаре) — строятся один раз."""
+        if self.room is None:
+            self.room = make_tiled_room(self.tex)
+            mg = self.tex.monster_hi.copy()
+            mg.fill((70, 200, 150, 255), special_flags=pygame.BLEND_RGBA_MULT)
+            self.mon_green = mg
 
     # ---- общие кирпичики
+    @staticmethod
+    def seg(u, a, b):
+        return clamp((u - a) / (b - a), 0.0, 1.0)
+
+    @staticmethod
+    def lerp(a, b, k):
+        return a + (b - a) * clamp(k, 0.0, 1.0)
+
     def dim(self, alpha):
         self.veil.fill((0, 0, 0))
         self.veil.set_alpha(int(clamp(alpha, 0, 255)))
+        self.screen.blit(self.veil, (0, 0))
+
+    def flash(self, rgb, a):
+        self.veil.fill(rgb)
+        self.veil.set_alpha(int(clamp(a, 0, 255)))
         self.screen.blit(self.veil, (0, 0))
 
     def lamp(self, x, y, k=1.0):
@@ -6289,32 +6361,37 @@ class PrologueRenderer:
         self.screen.blit(g, g.get_rect(center=(int(x), int(y))))
         g.set_alpha(255)
 
-    def figure(self, x, y, coat, size=1.0):
-        """Человек сверху: подбирается текстура по цвету одежды (халат — учёный, чёрный костюм — Кесслер, тёмно-серая форма — охрана)."""
-        kind = min(PERSONS, key=lambda k_: sum(abs(a - b) for a, b in zip(PERSONS[k_]["coat"], coat)))
-        draw_person(self.screen, self.tex.persons[kind], x, y, math.atan2(SH / 2 - y, SW / 2 - x), 0.0, 0.5 * size)
+    def shadow(self, x, y, r=26):
+        pygame.draw.ellipse(self.screen, (8, 8, 10), pygame.Rect(int(x - r + 4), int(y - r * 0.6 + 6), int(r * 2), int(r * 1.3)))
 
-    def tank(self, cx, cy, u, cracks=0.0, broken=False, grow=1.0):
-        """Стеклянный резервуар с образцом №13 (светящееся зелёное существо)."""
+    def actor(self, kind, x, y, ang, head=0.0, k=1.0, walk=0.0, amp=0.0):
+        """Человек сверху с тенью; при amp > 0 идёт (ботинки выступают по очереди)."""
+        self.shadow(x, y, 26 * k)
+        draw_person(self.screen, self.tex.persons[kind], x, y, ang, head, k, walk=walk, amp=amp, boot=self.tex.hparts["boot"])
+
+    def hero(self, x, y, ang, moving=False, zoom=2.5):
+        """Марк сверху: корпус, ботинки, руки (из тех же частей, что и в игре)."""
+        pl = self.s.player
+        pl.angle, pl.moving, pl.sprinting, pl.light_on, pl.battery = ang, moving, False, False, 80.0
+        self.s.has_gun, self.s.hidden = False, False
+        self.shadow(x, y, 24)
+        self.sprites.draw_player(x, y, self.screen, zoom=zoom, open_hands=True)
+
+    def look(self, frm, to, ang):
+        """Поворот головы от позиции frm к точке to относительно тела (ограничен ±1.25 рад)."""
+        return clamp((math.atan2(to[1] - frm[1], to[0] - frm[0]) - ang + math.pi) % (2 * math.pi) - math.pi, -1.25, 1.25)
+
+    def tank(self, cx, cy, u, cracks=0.0, broken=False):
+        """Стеклянный резервуар сверху: ободок, раствор, блик, трубки и (по мере роста) трещины. Содержимое рисует сцена."""
         scr = self.screen
         if not broken:
             pygame.draw.circle(scr, (30, 36, 38), (cx, cy), 162)
             pygame.draw.circle(scr, (84, 96, 98), (cx, cy), 154)
             pygame.draw.circle(scr, (14, 54, 42), (cx, cy), 142)
-        spr = pygame.transform.rotozoom(self.tex.monster_hi, -90 + math.sin(u * 1.2) * 10, 0.75 * grow)
-        if not broken:
-            spr.fill((70, 200, 150, 255), special_flags=pygame.BLEND_RGBA_MULT)
-            spr.set_alpha(175)
-        scr.blit(spr, spr.get_rect(center=(int(cx), int(cy + math.sin(u * 1.5) * 8))))
-        if not broken:
-            for i in range(14):                                                 # пузыри
-                bx = cx + math.sin(i * 3.1 + u * 0.7) * 90
-                by = cy + 130 - ((u * 40 + i * 37) % 260)
-                pygame.draw.circle(scr, (120, 220, 180), (int(bx), int(by)), 3 + i % 4)
             pygame.draw.arc(scr, (200, 230, 226), pygame.Rect(cx - 120, cy - 120, 240, 240), 2.4, 3.6, 3)
-            for sd in (-1, 1):                                                  # трубки
+            for sd in (-1, 1):
                 pygame.draw.line(scr, (70, 76, 78), (cx + sd * 60, 0), (cx + sd * 60, cy - 150), 10)
-            for k in range(9):                                                  # трещины в стекле
+            for k in range(9):
                 if cracks <= 0:
                     break
                 a = k * 0.7
@@ -6322,125 +6399,389 @@ class PrologueRenderer:
                         cy + math.sin(a + math.sin(k * 3 + i) * 0.25) * (20 + i * 26 * cracks)) for i in range(6)]
                 pygame.draw.lines(scr, (225, 240, 236), False, pts, 2)
 
-    # ---- шесть сцен
-    def scene0(self, u, d):                                   # лаборатория: резервуар с образцом №13
-        scr = self.screen
-        self.dim(120)
-        cx, cy = SW // 2, SH // 2 - 10
-        self.tank(cx, cy, u)
-        for sd in (-1, 1):
-            self.figure(cx + sd * 260, cy + 40 + math.sin(u * 0.9 + sd) * 4, (214, 214, 220))
-            pygame.draw.line(scr, (210, 210, 200), (cx + sd * 240, cy + 40), (cx + sd * 176, cy + 20), 3)
-        for lx in (cx - 340, cx + 340):
-            self.lamp(lx, 120, 0.6 + 0.4 * math.sin(u * 9 + lx))
+    # ---- сцена 0: ночь снаружи — приезжает машина, Кесслер идёт к люку «Б-13»
+    def scene0(self, u, d):
+        scr, t = self.screen, self.clock.t
+        tx = self.text
+        scr.fill((11, 17, 13))
+        rnd = random.Random(5)
+        for _ in range(380):                                                          # трава
+            x, y, g = rnd.randint(0, SW), rnd.randint(0, SH), rnd.randint(20, 44)
+            pygame.draw.line(scr, (g // 2, g, g // 2), (x, y), (x + 2, y - 5), 1)
+        pygame.draw.rect(scr, (30, 28, 24), (0, 462, 640, 112))                        # дорога
+        for x in range(10, 640, 70):
+            pygame.draw.rect(scr, (110, 104, 70), (x, 516, 36, 5))
+        pygame.draw.rect(scr, (54, 56, 58), (572, 190, 264, 264))                      # бетонная площадка
+        pygame.draw.rect(scr, (30, 32, 34), (572, 190, 264, 264), 4)
+        for x in range(612, 832, 40):
+            pygame.draw.line(scr, (44, 46, 48), (x, 194), (x, 450), 1)
+        for y in range(230, 450, 40):
+            pygame.draw.line(scr, (44, 46, 48), (576, y), (832, y), 1)
+        tx.draw_text(tx.f_small, "Б-13", (150, 150, 138), (640, 430))
+        hc = (704, 322)
+        op = self.seg(u, 3.6, 4.8)
+        pygame.draw.circle(scr, (20, 22, 24), hc, 80)
+        pygame.draw.circle(scr, (4, 4, 6), hc, 68)                                      # шахта
+        lid_c = (hc[0] + int(86 * op), hc[1])                                           # крышка люка съезжает вбок
+        pygame.draw.circle(scr, (30, 32, 36), lid_c, 70)
+        pygame.draw.circle(scr, (96, 102, 110), lid_c, 66)
+        for a in range(0, 360, 45):
+            pygame.draw.line(scr, (70, 76, 82), lid_c, (int(lid_c[0] + math.cos(math.radians(a)) * 60), int(lid_c[1] + math.sin(math.radians(a)) * 60)), 3)
+        pygame.draw.circle(scr, (60, 64, 70), lid_c, 14)
+        for (tx_, ty_, tr) in ((60, 70, 120), (250, 40, 90), (880, 60, 130), (990, 250, 110), (940, 640, 130), (700, 700, 100), (120, 650, 120), (400, 700, 90)):
+            pygame.draw.circle(scr, (6, 14, 8), (tx_ + 8, ty_ + 10), tr)                # кроны деревьев по краям кадра
+            pygame.draw.circle(scr, (12, 30, 16), (tx_, ty_), tr)
+            for j in range(14):
+                a = j * 0.8
+                pygame.draw.circle(scr, (20, 44, 24), (int(tx_ + math.cos(a) * tr * 0.55), int(ty_ + math.sin(a) * tr * 0.5)), int(tr * 0.28))
+        self.dim(90)
+        self.lamp(600, 215, 0.9)
+        self.lamp(808, 428, 0.9)
+        if op > 0:
+            self.lamp(hc[0], hc[1], op)
+        k = 1 - (1 - self.seg(u, 0.0, 1.9)) ** 2                                       # машина тормозит у площадки
+        cxp, cyp = self.lerp(-230, 430, k), 516
+        scr.blit(self.beam_car, (int(cxp + 90), int(cyp - 100)))
+        self.shadow(cxp, cyp, 98)
+        for wx in (-62, 62):
+            for wy in (-44, 44):
+                pygame.draw.rect(scr, (8, 8, 10), (int(cxp + wx - 18), int(cyp + wy - 8), 36, 16), border_radius=4)
+        pygame.draw.rect(scr, (18, 20, 26), (int(cxp - 95), int(cyp - 40), 190, 80), border_radius=18)
+        pygame.draw.rect(scr, (30, 34, 42), (int(cxp - 92), int(cyp - 37), 184, 74), border_radius=16)
+        pygame.draw.rect(scr, (44, 62, 78), (int(cxp + 14), int(cyp - 30), 52, 60), border_radius=8)
+        pygame.draw.rect(scr, (38, 44, 54), (int(cxp - 50), int(cyp - 30), 60, 60), border_radius=8)
+        pygame.draw.rect(scr, (30, 34, 40), (int(cxp - 76), int(cyp - 28), 22, 56), border_radius=6)
+        for dy in (-32, 16):
+            pygame.draw.rect(scr, (255, 240, 190), (int(cxp + 88), int(cyp + dy), 7, 16))
+        if u >= 1.9:
+            pygame.draw.rect(scr, (190, 24, 24), (int(cxp - 96), int(cyp - 30), 4, 12))
+            pygame.draw.rect(scr, (190, 24, 24), (int(cxp - 96), int(cyp + 18), 4, 12))
+            pygame.draw.polygon(scr, (28, 30, 38), [(cxp - 20, cyp - 42), (cxp + 20, cyp - 42), (cxp + 34, cyp - 74), (cxp - 6, cyp - 74)])   # открытая дверь
+        kk = self.seg(u, 2.0, 4.0)                                                      # Кесслер и охрана идут к люку
+        if u >= 2.0:
+            kx, ky = self.lerp(418, 650, kk), self.lerp(470, 372, kk)
+            ka = math.atan2(322 - 372, 704 - 650) if kk >= 1 else math.atan2(372 - 470, 650 - 418)
+            self.actor("kessler", kx, ky, ka, 0.3 * math.sin(t * 1.4) if kk >= 1 else 0.0, 1.0, t * 9, 1.0 if 0 < kk < 1 else 0.0)
+        gk = self.seg(u, 2.3, 4.2)
+        if u >= 2.3:
+            for (sx0, sy0, ex_, ey_) in ((392, 566, 590, 440), (468, 566, 612, 488)):
+                gx, gy = self.lerp(sx0, ex_, gk), self.lerp(sy0, ey_, gk)
+                ga = math.atan2(322 - gy, 704 - gx) if gk >= 1 else math.atan2(ey_ - sy0, ex_ - sx0)
+                self.actor("guard", gx, gy, ga, 0.0, 1.0, t * 9, 1.0 if 0 < gk < 1 else 0.0)
+        a = clamp(min((u - 0.5) / 0.6, (4.4 - u) / 0.5, 1.0), 0.0, 1.0)                 # титул
+        if a > 0:
+            tx.draw_text(tx.f_title, "БУНКЕР-13", (int(210 * a), int(24 * a), int(24 * a)), (SW // 2, 118), True, False)
+            tx.draw_text(tx.f_mid, "1987", (int(170 * a), int(170 * a), int(160 * a)), (SW // 2, 176))
+        rr = random.Random(int(t * 24))                                                  # дождь
+        for _ in range(170):
+            x, y = rr.randint(-40, SW), rr.randint(-40, SH)
+            pygame.draw.line(scr, (110, 130, 150), (x, y), (x - 6, y + 20), 1)
 
-    def scene1(self, u, d):                                   # кабинет: Кесслер отдаёт приказ
-        scr = self.screen
-        self.dim(135)
-        cx, cy = SW // 2, SH // 2
-        pygame.draw.rect(scr, (30, 22, 14), (cx - 200, cy - 20, 400, 130))
-        pygame.draw.rect(scr, (96, 68, 44), (cx - 196, cy - 24, 392, 124))
-        pygame.draw.rect(scr, (146, 112, 74), (cx - 196, cy - 24, 392, 124), 3)
-        for i in range(3):                                                      # бумаги и красная печать
-            pygame.draw.rect(scr, (214, 208, 190), (cx - 120 + i * 90, cy - 4 + (i % 2) * 6, 70, 46))
-        pygame.draw.circle(scr, (170, 24, 28), (cx + 90, cy + 40), 16)
-        self.figure(cx, cy - 74, (28, 28, 34), 1.5)                              # Кесслер: тёмный костюм, красный галстук
-        pygame.draw.line(scr, (190, 30, 34), (cx, cy - 74), (cx, cy - 54), 4)
-        self.figure(cx - 280, cy + 20 + math.sin(u * 5) * 6, (232, 232, 236), 1.2)   # Вейра качает головой
-        self.figure(cx + 280, cy + 20, (60, 60, 70), 1.1)                           # охрана
-        k = 0.5 + 0.5 * math.sin(u * 6)
-        g = self.tex.glow_exit_r
-        g.set_alpha(int(clamp(60 + 190 * k, 0, 255)))
-        scr.blit(g, g.get_rect(center=(SW - 90, 110)))                         # красная сигнальная лампа
-        g.set_alpha(255)
-        self.lamp(cx, 90, 0.8)
+    # ---- сцена 1: лаборатория — охрана ведёт Томаса в резервуар
+    def scene1(self, u, d):
+        scr, t = self.screen, self.clock.t
+        scr.blit(self.room, (0, 0))
+        self.dim(125)
+        T = (690, 330)
+        pygame.draw.rect(scr, (22, 24, 28), (86, 96, 340, 56), border_radius=4)         # пульт с мониторами
+        pygame.draw.rect(scr, (70, 76, 82), (90, 100, 332, 48), border_radius=4)
+        for i in range(4):
+            x0 = 104 + i * 78
+            pygame.draw.rect(scr, (10, 14, 14), (x0, 106, 64, 36))
+            pygame.draw.rect(scr, (12, 54, 46), (x0 + 2, 108, 60, 32))
+            for j in range(4):
+                yy = 110 + int((t * 22 + i * 7 + j * 8) % 28)
+                pygame.draw.line(scr, (80, 230, 170), (x0 + 6, yy), (x0 + 26 + (i * j * 7) % 30, yy), 1)
+        self.tank(T[0], T[1], u)
+        # Томас: идёт, останавливается и оглядывается, заходит в резервуар
+        if u < 2.6:
+            k = u / 2.6
+            tx_, ty_ = self.lerp(-90, 500, k), self.lerp(500, 440, k)
+            ta, tamp, thead = math.atan2(440 - 500, 500 + 90), 1.0, 0.0
+        elif u < 3.4:
+            tx_, ty_ = 500.0, 440.0
+            ta, tamp = -0.45, 0.0
+            thead = 1.1 * math.sin((u - 2.6) / 0.8 * math.pi)                           # оглядывается назад
+        elif u < 4.3:
+            k = (u - 3.4) / 0.9
+            tx_, ty_ = self.lerp(500, T[0], k), self.lerp(440, T[1] + 2, k)
+            ta, tamp, thead = math.atan2(T[1] - 440, T[0] - 500), 1.0, 0.0
+        else:
+            tx_, ty_ = T[0] + 5 * math.sin(t * 1.3), T[1] + 4 * math.sin(t * 1.1)
+            ta, tamp, thead = 0.4 * math.sin(t * 0.7) - 0.2, 0.0, 0.0
+        ex = min(tx_, 540.0)
+        for sd, gy_off in ((-1, -56), (1, 56)):                                         # охранники конвоируют
+            gx, gy = ex - 74, ty_ + gy_off
+            walking = u < 3.4 and tx_ < 540.0
+            ga = math.atan2(440 - 500, 500 + 90) if walking else math.atan2(T[1] - gy, T[0] - gx)
+            self.actor("guard", gx, gy, ga, 0.0, 1.0, t * 9, 1.0 if walking else 0.0)
+        wp = (250.0, 200.0)
+        wlook = self.look(wp, (tx_, ty_), -math.pi / 2) * self.seg(u, 2.6, 3.2)          # Вейра у пульта, потом смотрит на Томаса
+        self.actor("weira", wp[0], wp[1], -math.pi / 2, wlook, 1.0)
+        sp = (630.0, 170.0)
+        self.actor("scientist", sp[0], sp[1], math.atan2(T[1] - sp[1], T[0] - sp[0]), 0.0, 1.0)
+        self.actor("thomas", tx_, ty_, ta, thead, 1.0, t * 9, tamp)
+        la = self.seg(u, 4.2, 4.6)
+        if la > 0:                                                                        # крышка закрывается, раствор наполняет резервуар
+            self.lid.set_alpha(int(255 * la))
+            scr.blit(self.lid, (T[0] - 170, T[1] - 170))
+        lq = self.seg(u, 4.3, 5.4)
+        if lq > 0:
+            self.liq.set_alpha(int(255 * lq))
+            scr.blit(self.liq, (T[0] - 170, T[1] - 170))
+            for i in range(10):
+                bx, by = T[0] + math.sin(i * 2.3 + t * 0.8) * 70, T[1] + 120 - ((t * 38 + i * 29) % 240)
+                pygame.draw.circle(scr, (150, 230, 200), (int(bx), int(by)), 2 + i % 3)
 
-    def scene2(self, u, d):                                   # медпункт: Марку делают «витамины»
-        scr = self.screen
+    # ---- сцена 2: кабинет — Кесслер ставит печать «ОДОБРЕНО»
+    def scene2(self, u, d):
+        scr, t = self.screen, self.clock.t
+        tx = self.text
+        cx = SW // 2
+        scr.fill((30, 22, 18))
+        for y in range(0, SH, 36):                                                      # паркет
+            c = 40 + (y // 36) % 2 * 6
+            pygame.draw.rect(scr, (c, c - 12, c - 20), (0, y, SW, 36))
+            pygame.draw.line(scr, (22, 16, 12), (0, y), (SW, y), 1)
+        pygame.draw.rect(scr, (24, 20, 18), (0, 0, SW, 150))                            # стена с картой
+        pygame.draw.rect(scr, (44, 52, 56), (300, 14, 424, 112))
+        pygame.draw.rect(scr, (110, 114, 118), (300, 14, 424, 112), 3)
+        for x in range(320, 720, 40):
+            pygame.draw.line(scr, (62, 72, 76), (x, 18), (x, 122), 1)
+        for y in range(34, 122, 28):
+            pygame.draw.line(scr, (62, 72, 76), (304, y), (720, y), 1)
+        for (x, y) in ((380, 60), (520, 90), (640, 50)):
+            pygame.draw.circle(scr, (200, 40, 40), (x, y), 6)
+        pygame.draw.lines(scr, (200, 40, 40), False, [(380, 60), (450, 70), (520, 90), (580, 70), (640, 50)], 2)
+        tx.draw_text(tx.f_small, "ГЛУБИНА", (210, 60, 60), (512, 140))
+        for y in range(170, 560, 70):                                                  # шкафы с папками
+            pygame.draw.rect(scr, (28, 22, 18), (0, y, 70, 58))
+            pygame.draw.rect(scr, (74, 56, 40), (4, y + 4, 62, 50))
+            for k in range(4):
+                pygame.draw.rect(scr, (110 - k * 8, 40 + k * 14, 36), (8 + k * 14, y + 8, 10, 42))
+        pygame.draw.rect(scr, (66, 22, 24), (260, 200, 504, 360))                       # ковёр
+        pygame.draw.rect(scr, (140, 100, 60), (260, 200, 504, 360), 4)
+        self.dim(80)
+        pygame.draw.rect(scr, (22, 14, 10), (cx - 214, 302, 428, 116), border_radius=6)  # стол
+        pygame.draw.rect(scr, (96, 68, 44), (cx - 210, 306, 420, 108), border_radius=6)
+        pygame.draw.rect(scr, (146, 112, 74), (cx - 210, 306, 420, 108), 3, border_radius=6)
+        for i in range(3):                                                              # бумаги
+            pygame.draw.rect(scr, (214, 208, 190), (cx - 160 + i * 70, 330 + (i % 2) * 6, 56, 44))
+        pygame.draw.rect(scr, (226, 220, 200), (cx + 62, 336, 66, 52))                   # приказ
+        self.lamp(cx - 120, 330, 1.0)
+        pygame.draw.circle(scr, (240, 220, 140), (cx - 120, 330), 12)
+        # Кесслер расхаживает за столом, потом ставит печать
+        kx = cx + 60 * math.sin(u * 0.9) if u < 2.4 else self.lerp(cx + 60 * math.sin(2.4 * 0.9), cx + 90, (u - 2.4) / 0.6)
+        wp = (cx - 60.0, 470.0)
+        shake = 0.55 * math.sin(u * 5) if 1.0 <= u < 2.6 else 0.0                       # Вейра качает головой: «нет»
+        # Вейра уходит (после печати)
+        wk = self.seg(u, 4.2, 6.0)
+        wx, wy, wa, wamp = wp[0], wp[1], -math.pi / 2, 0.0
+        if wk > 0:
+            wx, wy, wa, wamp = self.lerp(wp[0], -80, wk), 470.0, math.pi, 1.0
+        self.actor("guard", 190, 410, 0.0, 0.0, 1.0)
+        self.actor("kessler", kx, 262, math.pi / 2, 0.25 * math.sin(t * 0.8), 1.05)
+        self.actor("weira", wx, wy, wa, shake if wk <= 0 else 0.0, 1.0, t * 9, wamp)
+        # печать: поднимается, бьёт по бумаге, оставляет красный оттиск
+        sy = 318 + 18 * (1 - self.seg(u, 2.6, 3.2)) if u < 3.4 else 318 + 18 * self.seg(u, 3.6, 4.0)
+        if u >= 2.6:
+            pygame.draw.rect(scr, (12, 12, 14), (cx + 78, int(sy) - 6, 30, 44), border_radius=4)
+            pygame.draw.rect(scr, (60, 60, 68), (cx + 80, int(sy) - 4, 26, 40), border_radius=4)
+        if u >= 3.2:
+            pygame.draw.circle(scr, (170, 24, 28), (cx + 95, 362), 26, 3)
+            pygame.draw.circle(scr, (170, 24, 28), (cx + 95, 362), 18, 1)
+            tx.draw_text(tx.f_small, "ОДОБРЕНО", (190, 30, 34), (cx + 95, 364))
+        if 3.2 <= u < 3.5:
+            self.shake = (0.0, 5.0 * (1 - (u - 3.2) / 0.3))                             # удар печати отдаёт в кадр
+
+    # ---- сцена 3: медпункт — Марку делают «витамины»
+    def scene3(self, u, d):
+        scr, t = self.screen, self.clock.t
+        tx = self.text
+        scr.blit(self.room, (0, 0))
         self.dim(110)
-        cx, cy = SW // 2, SH // 2 + 20
-        pygame.draw.rect(scr, (24, 26, 30), (cx - 230, cy - 90, 460, 190))
-        pygame.draw.rect(scr, (214, 218, 222), (cx - 226, cy - 94, 452, 182))
-        pygame.draw.rect(scr, (140, 146, 152), (cx - 226, cy - 94, 452, 182), 3)
-        mark = pygame.transform.rotozoom(self.tex.player_hi, 90, 0.95)
-        scr.blit(mark, mark.get_rect(center=(cx - 10, cy)))
-        k = clamp((u - 0.8) / 2.4, 0.0, 1.0)                                        # шприц подъезжает к плечу
-        sx, sy = cx + 250 - 230 * k, cy - 190 + 125 * k
-        pygame.draw.line(scr, (230, 232, 236), (sx + 70, sy - 40), (sx, sy), 14)
-        pygame.draw.line(scr, (80, 220, 150), (sx + 60 - 40 * k, sy - 34 + 24 * k), (sx + 6, sy - 3), 8)
-        pygame.draw.line(scr, (190, 194, 198), (sx, sy), (sx - 26, sy + 16), 3)
-        pygame.draw.circle(scr, (60, 120, 190), (int(sx + 80), int(sy - 46)), 15)       # перчатка Вейры
-        mon = [(SW - 220 + i * 6, 110 - int(26 * math.sin(i * 0.9 + u * 6)) if i % 5 == 2 else 110) for i in range(30)]   # кардиомонитор
-        pygame.draw.lines(scr, (80, 255, 130), False, mon, 2)
-        self.lamp(cx, 70, 1.0)
-        self.lamp(cx, cy, 0.5)
+        B = (462, 400)
+        pygame.draw.rect(scr, (22, 24, 28), (B[0] - 196, B[1] - 76, 392, 152), border_radius=8)       # кушетка
+        pygame.draw.rect(scr, (212, 216, 222), (B[0] - 192, B[1] - 72, 384, 144), border_radius=8)
+        pygame.draw.rect(scr, (150, 156, 164), (B[0] - 192, B[1] - 72, 384, 144), 3, border_radius=8)
+        pygame.draw.rect(scr, (240, 242, 246), (B[0] - 186, B[1] - 40, 84, 80), border_radius=10)    # подушка
+        jit = 0.0 if u < 3.0 else 2.5 * math.sin(t * 40) * math.exp(-(u - 3.0) * 1.2)
+        mark = pygame.transform.rotozoom(self.tex.player_hi, 180, 0.95)
+        scr.blit(mark, mark.get_rect(center=(int(B[0] + 18 + jit), int(B[1] + jit * 0.5))))
+        pygame.draw.line(scr, (150, 156, 164), (B[0] - 250, B[1] - 150), (B[0] - 250, B[1] + 30), 4)     # стойка капельницы
+        pygame.draw.rect(scr, (200, 230, 224), (B[0] - 266, B[1] - 168, 32, 46), border_radius=6)
+        pygame.draw.rect(scr, (110, 150, 146), (B[0] - 266, B[1] - 168, 32, 46), 2, border_radius=6)
+        pygame.draw.circle(scr, (180, 230, 220), (B[0] - 250, B[1] - 112 + int((t * 30) % 20)), 3)
+        pygame.draw.lines(scr, (200, 230, 224), False, [(B[0] - 250, B[1] - 120), (B[0] - 250, B[1] - 40), (B[0] - 210, B[1] - 4), (B[0] - 150, B[1] - 20)], 2)
+        mx, my = 800, 150                                                                   # кардиомонитор
+        pygame.draw.rect(scr, (14, 16, 18), (mx - 110, my - 60, 220, 120), border_radius=6)
+        pygame.draw.rect(scr, (6, 28, 20), (mx - 104, my - 54, 208, 108), border_radius=4)
+        fast = u >= 3.0
+        pts = []
+        for i in range(70):
+            ph = (i + int(t * (70 if fast else 40))) % (11 if fast else 20)
+            pts.append((mx - 100 + i * 2.9, my + 8 - (34 if ph == 0 else (-14 if ph == 2 else 0)) + (3 if ph == 1 else 0)))
+        pygame.draw.lines(scr, (80, 255, 130), False, pts, 2)
+        tx.draw_text(tx.f_small, "ЧСС  %d" % (131 if fast else 72), (80, 255, 130), (mx, my - 38))
+        wk = self.seg(u, 0.4, 1.0)
+        wp = (B[0] + 20.0, B[1] - 140.0)
+        self.actor("weira", wp[0], wp[1], math.pi / 2, self.look(wp, (B[0] - 60, B[1] - 20), math.pi / 2) * wk, 1.0)
+        sp = (B[0] + 210.0, B[1] - 120.0)
+        self.actor("scientist", sp[0], sp[1], math.pi + 0.35, 0.3 * math.sin(t * 0.7), 1.0)
+        # шприц: подводится к плечу Марка, поршень нажимается
+        k = self.seg(u, 0.8, 3.0)
+        tip = (self.lerp(wp[0] + 60, B[0] - 84, k), self.lerp(wp[1] + 70, B[1] - 22, k))
+        back = (tip[0] + 54, tip[1] - 22)
+        pygame.draw.line(scr, (200, 204, 210), wp, back, 12)                              # рука Вейры
+        pygame.draw.line(scr, (232, 234, 240), (wp[0], wp[1] + 4), (back[0], back[1] + 4), 6)
+        pygame.draw.line(scr, (235, 238, 242), tip, back, 11)
+        plunge = self.seg(u, 3.2, 3.9)
+        mid = (tip[0] + (back[0] - tip[0]) * (0.2 + 0.5 * (1 - plunge)), tip[1] + (back[1] - tip[1]) * (0.2 + 0.5 * (1 - plunge)))
+        pygame.draw.line(scr, (80, 220, 150), tip, mid, 7)
+        pygame.draw.line(scr, (130, 130, 138), (tip[0] - 14, tip[1] + 6), tip, 2)                # игла
+        pygame.draw.circle(scr, (60, 120, 190), (int(back[0] + 8), int(back[1] - 3)), 10)         # перчатка
+        self.lamp(B[0], B[1] - 10, 1.0)
+        self.lamp(B[0], B[1] - 10, 0.5)
 
-    def scene3(self, u, d):                                   # прорыв: стекло трескается и лопается
-        scr = self.screen
-        cx, cy = SW // 2, SH // 2 - 10
+    # ---- сцена 4: прорыв — Томас превращается в монстра, стекло лопается, учёные бегут
+    def scene4(self, u, d):
+        scr, t = self.screen, self.clock.t
+        T = (SW // 2, 330)
+        scr.blit(self.room, (0, 0))
         self.dim(120)
-        brk = u > 2.3
-        t2 = max(0.0, u - 2.3)
+        brk = u >= 2.6
+        t2 = max(0.0, u - 2.6)
         if brk:
-            pygame.draw.circle(scr, (22, 86, 60), (cx, cy), int(150 + t2 * 190))        # зелёная жижа растекается
-        self.tank(cx, cy, u, cracks=clamp((u - 0.8) / 1.4, 0.0, 1.0), broken=brk, grow=1.0 + t2 * 0.9)
+            pygame.draw.circle(scr, (22, 86, 60), T, int(150 + t2 * 210))                    # раствор растекается
+        self.tank(T[0], T[1], u, cracks=self.seg(u, 0.4, 2.4), broken=brk)
+        tf = self.seg(u, 1.0, 2.4)                                                          # 0 — человек, 1 — монстр
+        if not brk:
+            jx, jy = random.uniform(-3, 3) * tf * 2, random.uniform(-3, 3) * tf * 2
+            self.tmp.fill((0, 0, 0, 0))
+            draw_person(self.tmp, self.tex.persons["thomas"], 130 + jx, 130 + jy, 0.4 * math.sin(t * 0.7) - 0.2 + tf * 2.0, 0.0, 1.4)
+            self.tmp.set_alpha(int(255 * (1 - tf)))
+            scr.blit(self.tmp, (T[0] - 130, T[1] - 130))
+            if tf > 0:
+                mo = pygame.transform.rotozoom(self.mon_green, 0.0, 0.34 + 0.2 * tf)
+                mo.set_alpha(int(255 * tf))
+                scr.blit(mo, mo.get_rect(center=(int(T[0] + jx), int(T[1] + jy))))
+        people = (("weira", (270.0, 330.0)), ("scientist", (790.0, 250.0)), ("scientist", (360.0, 520.0)))
+        for kind, (px, py) in people:
+            dx, dy = px - T[0], py - T[1]
+            ln = math.hypot(dx, dy)
+            if not brk:
+                self.actor(kind, px, py, math.atan2(-dy, -dx), 0.0, 1.0)
+            else:                                                                            # бегут прочь от резервуара
+                r = 70 * t2 + 220 * t2 ** 1.5
+                x, y = px + dx / ln * r, py + dy / ln * r
+                if -120 < x < SW + 120 and -120 < y < SH + 120:
+                    self.actor(kind, x, y, math.atan2(dy, dx), 0.0, 1.0, t * 16, 1.0)
         if brk:
-            for i in range(16):                                                     # осколки стекла
-                a = i * 0.39 + 0.2
-                x, y = cx + math.cos(a) * (150 + t2 * 380), cy + math.sin(a) * (150 + t2 * 380)
+            for i in range(22):                                                              # осколки стекла
+                a = i * 0.2856 + 0.1
+                x, y = T[0] + math.cos(a) * (150 + t2 * 380), T[1] + math.sin(a) * (150 + t2 * 380)
                 pygame.draw.polygon(scr, (160, 210, 206), [(x, y), (x + 22, y + 8), (x + 6, y + 26)])
-        for sd in (-1, 1):                                                          # учёные разбегаются
-            fx = cx + sd * (260 + max(0.0, u - 2.0) * 340)
-            self.figure(fx, cy + 40 + sd * max(0.0, u - 2.0) * 40, (214, 214, 220))
-        if brk:
-            k = 0.5 + 0.5 * math.sin(self.clock.t * 14)
-            self.veil.fill((200, 10, 10))
-            self.veil.set_alpha(int(clamp(40 + 60 * k, 0, 255)))
-            scr.blit(self.veil, (0, 0))
-            if t2 < 0.25:                                                           # вспышка при разрыве стекла
-                self.veil.fill((255, 255, 255))
-                self.veil.set_alpha(int(clamp(220 * (1 - t2 / 0.25), 0, 255)))
-                scr.blit(self.veil, (0, 0))
+            act = StageActor("chase", math.pi / 2, u)
+            act.ani.lunge = max(0.0, 1.0 - t2 * 0.8)
+            z = self.lerp(1.3, 1.9, t2 / 1.8)
+            self.monster_view.paint(scr, act, T[0], T[1] + 30 + 110 * self.seg(t2, 0.4, 3.0), t2 < 2.0, zoom=z)
+            self.flash((200, 10, 10), 40 + 60 * abs(math.sin(t * 14)))
+            amp = 26 * math.exp(-t2 * 1.4)
+            self.shake = (random.uniform(-1, 1) * amp, random.uniform(-1, 1) * amp)
+            self.pulse = 0.08 * math.exp(-t2 * 2.2)
+            if t2 < 0.25:
+                self.flash((255, 255, 255), 230 * (1 - t2 / 0.25))
                 screen_glitch(scr, 1.0, False)
+        elif u > 1.0:
+            self.shake = (random.uniform(-1, 1) * 3 * tf, random.uniform(-1, 1) * 3 * tf)
 
-    def scene4(self, u, d):                                   # печать: створки захлопываются
-        scr = self.screen
+    # ---- сцена 5: коридор — створки запечатывают этаж, Кесслер бежит к лифту, за ним — чудовище
+    def scene5(self, u, d):
+        scr, t = self.screen, self.clock.t
+        tx = self.text
+        scr.blit(self.room, (0, 0))
         self.dim(120)
-        k = clamp(u / 3.0, 0.0, 1.0)
-        # Кесслер убегает к лифту
-        self.figure(SW - 130, SH - 150 - u * 85, (24, 24, 30), 1.3)
-        pygame.draw.rect(scr, (60, 64, 70), (SW - 190, 70, 120, 64))
-        pygame.draw.polygon(scr, (90, 220, 120), [(SW - 130, 80), (SW - 150, 110), (SW - 110, 110)])
-        w = int(SW / 2 * k)
-        for sd, x0 in ((-1, 0), (1, SW - w)):
-            pygame.draw.rect(scr, (52, 56, 62), (x0, 0, w, SH))
-            for i in range(-SH, w + SH, 46):                                       # предупреждающие полосы
-                pygame.draw.line(scr, (150, 126, 30), (x0 + i, SH), (x0 + i + SH // 2, SH // 2 - SH // 2), 10)
-            pygame.draw.rect(scr, (110, 116, 124), (x0, 0, w, SH), 4)
-        if k > 0.85 and int(self.clock.t * 4) % 2 == 0:
-            self.text.draw_text(self.text.f_title, "ПЕЧАТЬ", (220, 20, 20), (SW // 2, SH // 2 - 30), True, False)
-        a = 0.5 + 0.5 * math.sin(self.clock.t * 10)
+        pygame.draw.rect(scr, (22, 26, 30), (0, 0, SW, 215))
+        pygame.draw.rect(scr, (22, 26, 30), (0, 525, SW, 195))
+        for x in range(0, SW, 128):
+            pygame.draw.line(scr, (14, 18, 22), (x, 0), (x, 215), 3)
+            pygame.draw.line(scr, (14, 18, 22), (x, 525), (x, SH), 3)
+        for x in (150, 500, 740):
+            pygame.draw.rect(scr, (12, 14, 16), (x, 150, 72, 66))
+            pygame.draw.rect(scr, (70, 74, 80), (x + 4, 154, 64, 62), 2)
+        pygame.draw.rect(scr, (8, 8, 10), (0, 209, SW, 8))
+        pygame.draw.rect(scr, (8, 8, 10), (0, 523, SW, 8))
+        alarm = 0.5 + 0.5 * math.sin(t * 10)
         g = self.tex.glow_exit_r
-        g.set_alpha(int(clamp(80 + 170 * a, 0, 255)))
-        scr.blit(g, g.get_rect(center=(80, 90)))
+        g.set_alpha(int(clamp(60 + 190 * alarm, 0, 255)))
+        for lx in (120, 400, 680):
+            scr.blit(g, g.get_rect(center=(lx, 232)))
+            scr.blit(g, g.get_rect(center=(lx + 90, 508)))
         g.set_alpha(255)
+        pygame.draw.rect(scr, (12, 14, 16), (850, 270, 160, 180))                         # лифт справа
+        pygame.draw.rect(scr, (176, 164, 124), (860, 282, 140, 156))
+        pygame.draw.rect(scr, (10, 10, 12), (896, 246, 68, 24))
+        pygame.draw.polygon(scr, (90, 220, 120) if u > 3.9 else (60, 70, 60), [(930, 250), (916, 266), (944, 266)])
+        run = self.seg(u, 0.2, 3.0)
+        kx = self.lerp(40, 900, run)
+        if u < 3.1:
+            self.actor("kessler", kx, 372, 0.0, 0.0, 1.05, t * 16, 1.0)
+            pygame.draw.rect(scr, (26, 20, 12), (int(kx + 30), 392, 26, 18), border_radius=3)    # чемоданчик
+            pygame.draw.rect(scr, (110, 90, 52), (int(kx + 32), 394, 22, 14), border_radius=3)
+            for i, off in enumerate((120, 200)):
+                gx = min(kx - off, 800.0 - i * 60)
+                stop = u >= 3.2
+                self.actor("guard", gx, 340 + i * 64, math.pi if stop else 0.0, 0.0, 1.0, t * 16, 0.0 if (gx >= 780 - i * 60 or stop) else 1.0)
+        else:
+            if u < 3.8:
+                self.actor("kessler", 930, 372, math.pi, 0.35, 1.05)
+            for i in range(2):
+                self.actor("guard", 800.0 - i * 60, 340 + i * 64, math.pi, 0.0, 1.0)
+        cl = self.seg(u, 3.3, 3.8)                                                          # двери лифта закрываются
+        pw = int(70 * cl)
+        if pw > 0:
+            pygame.draw.rect(scr, (108, 114, 120), (860, 282, pw, 156))
+            pygame.draw.rect(scr, (108, 114, 120), (1000 - pw, 282, pw, 156))
+        gate = self.seg(u, 3.6, 4.6)                                                         # створки перегораживают коридор
+        h = int(157 * gate)
+        if h > 0:
+            for (y0, hh) in ((215, h), (525 - h, h)):
+                pygame.draw.rect(scr, (60, 64, 70), (306, y0, 48, hh))
+                pygame.draw.rect(scr, (110, 116, 124), (306, y0, 48, hh), 3)
+                for yy in range(y0, y0 + hh - 10, 24):
+                    pygame.draw.line(scr, (150, 126, 30), (308, yy + 20), (352, yy), 6)
+        if u >= 3.0:                                                                         # чудовище из тьмы
+            mk = self.seg(u, 3.0, 4.5)
+            act = StageActor("chase", 0.0, u)
+            act.ani.lunge = 0.0 if u < 4.5 else 0.5 + 0.5 * abs(math.sin(t * 12))
+            self.monster_view.paint(scr, act, self.lerp(-160, 270, mk), 372, False, zoom=1.5)
+        if u >= 4.2 and int(t * 4) % 2 == 0:
+            tx.draw_text(tx.f_title, "ПЕЧАТЬ", (220, 20, 20), (SW // 2, 110), True, False)
+        if 4.6 <= u < 5.0:
+            self.shake = (random.uniform(-1, 1) * 10 * (1 - (u - 4.6) / 0.4), random.uniform(-1, 1) * 10 * (1 - (u - 4.6) / 0.4))
 
-    def scene5(self, u, d):                                   # пробуждение: Марк открывает глаза
-        scr = self.screen
+    # ---- сцена 6: пробуждение — Марк открывает глаза в темноте, рация шипит
+    def scene6(self, u, d):
+        scr, t = self.screen, self.clock.t
+        scr.blit(self.room, (0, 0))
         self.dim(170)
         cx, cy = SW // 2, SH // 2
         self.lamp(cx, cy + 60, 1.0)
         self.lamp(cx, cy + 60, 0.7)
+        for (bx, by, br) in ((220, 220, 40), (800, 180, 30), (900, 520, 50), (150, 560, 34)):    # размытые огни аварийных ламп
+            pygame.draw.circle(scr, (80, 20, 18), (bx, by), br, 3)
         e = clamp((u - 0.6) / 1.8, 0.0, 1.0)
         open_k = e * e * (3 - 2 * e)
-        if 3.1 < u < 3.35:                                                           # моргание
+        if 3.1 < u < 3.35:                                                                   # моргание
             open_k = 0.1
         lid = int(SH / 2 * (1.0 - open_k))
         pygame.draw.rect(scr, (0, 0, 0), (0, 0, SW, lid))
         pygame.draw.rect(scr, (0, 0, 0), (0, SH - lid, SW, lid))
-        for _ in range(3 if open_k > 0.3 else 0):                                    # помехи рации
+        for _ in range(3 if open_k > 0.3 else 0):                                           # помехи рации
             y = random.randint(SH - 150, SH - 60)
             pygame.draw.line(scr, (150, 170, 160), (random.randint(0, SW // 2), y), (random.randint(SW // 2, SW), y), 1)
+        if u >= 4.2:                                                                         # щелчок фонарика — вспышка
+            self.flash((255, 250, 225), 255 * max(0.0, 1.0 - (u - 4.2) / 0.5))
 
     def subtitles(self, idx, u):
         scr, tx = self.screen, self.text
@@ -6460,11 +6801,24 @@ class PrologueRenderer:
     def draw(self):
         pr, scr = self.prologue, self.screen
         idx, u, d = pr.scene()
-        scr.blit(self.room, (0, 0))
+        self.shake, self.pulse = (0.0, 0.0), 0.0
+        self.screen = self.stage                                    # сцена рисуется на отдельный холст, камера переносит его на экран
         getattr(self, "scene%d" % idx)(u, d)
+        self.screen = scr
+        z0, z1, x0, x1, y0, y1 = self.CAMS[idx]
+        k = clamp(u / d, 0.0, 1.0)
+        k = k * k * (3 - 2 * k)
+        z = z0 + (z1 - z0) * k + self.pulse
+        px, py = x0 + (x1 - x0) * k + self.shake[0], y0 + (y1 - y0) * k + self.shake[1]
+        if z > 1.002:
+            bw, bh = int(SW * z), int(SH * z)
+            big = pygame.transform.smoothscale(self.stage, (bw, bh))
+            scr.blit(big, (int(clamp(-(bw - SW) / 2 + px, -(bw - SW), 0)), int(clamp(-(bh - SH) / 2 + py, -(bh - SH), 0))))
+        else:
+            scr.blit(self.stage, (int(px), int(py)))
         scr.blit(self.tex.overlay, (0, 0))
         scr.blit(random.choice(self.tex.grain), (0, 0))
-        pygame.draw.rect(scr, (0, 0, 0), (0, 0, SW, 56))                           # кинематографичные полосы
+        pygame.draw.rect(scr, (0, 0, 0), (0, 0, SW, 56))                                   # кинематографичные полосы
         pygame.draw.rect(scr, (0, 0, 0), (0, SH - 56, SW, 56))
         self.subtitles(idx, u)
         if pr.t > 0.8:
@@ -7418,7 +7772,8 @@ class Game:
         self.struggle_view = StruggleRenderer(cfg=self.cfg, clock=self.clock, scare=self.scare, s=self.s, screen=self.screen,
                                               sprites=self.sprites, struggle=self.struggle, tex=self.tex, text=self.text)
         self.prologue = PrologueSystem(audio=self.audio, s=self.s)
-        self.prologue_view = PrologueRenderer(clock=self.clock, prologue=self.prologue, screen=self.screen, tex=self.tex, text=self.text)
+        self.prologue_view = PrologueRenderer(clock=self.clock, prologue=self.prologue, screen=self.screen, tex=self.tex, text=self.text,
+                                              sprites=self.sprites, s=self.s, monster_view=self.monster_view)
         self.pounce = PounceSystem(audio=self.audio, s=self.s)
         self.pounce_view = PounceRenderer(cfg=self.cfg, clock=self.clock, pounce=self.pounce, scare=self.scare, s=self.s,
                                           screen=self.screen, sprites=self.sprites, tex=self.tex)
